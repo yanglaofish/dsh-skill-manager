@@ -163,23 +163,36 @@ Body`, 'utf8');
 }
 
 // --- session (L2) layer ---
-console.log('setSessionSkills / sessionSkillView');
+console.log('setSessionSkills / sessionSkillView (follow-workspace default)');
 {
   const ws = join(home, 'projects', 'demo');
   await linkGlobalSkillToWorkspace(ws, 'ws-test-skill');
   const sid = 'session-abc-123';
+  // no config yet: follow workspace → session-enabled = workspace set
+  let view = await sessionSkillView(sid, ws);
+  ok(view.ok === true, 'session view 成功');
+  ok(view.session.explicit === false, '默认 explicit=false（跟随工作区）');
+  ok(view.skills.find((s) => s.name === 'ws-test-skill').sessionEnabled === true, '跟随模式：工作区技能自动会话启用');
   // attempt to enable a skill NOT in workspace set -> filtered out
   const r = await setSessionSkills(sid, ws, ['ws-test-skill', 'non-workspace-skill']);
   ok(r.ok === true, 'session set 成功');
+  ok(r.cfg.explicit === true, '显式勾选后 explicit=true');
   ok(r.cfg.enabled.length === 1 && r.cfg.enabled[0] === 'ws-test-skill', '超出工作区允许集的被过滤（交集校验）');
-  const view = await sessionSkillView(sid, ws);
-  ok(view.ok === true, 'session view 成功');
+  view = await sessionSkillView(sid, ws);
   const wsSkill = view.skills.find((s) => s.name === 'ws-test-skill');
   ok(wsSkill.layer === 'workspace', '工作区 link 技能 layer 标注 workspace');
-  ok(wsSkill.sessionEnabled === true, '会话勾选状态正确');
+  ok(wsSkill.sessionEnabled === true, '显式模式下勾选状态正确');
   const cfg = await readSessionConfig(sid);
   ok(cfg.enabled.includes('ws-test-skill'), '会话配置落盘');
+  // restore follow-workspace
+  const back = await setSessionSkills(sid, ws, [], false);
+  ok(back.cfg.explicit === false, 'explicit=false 恢复跟随');
+  view = await sessionSkillView(sid, ws);
+  ok(view.session.explicit === false && view.skills.find((s) => s.name === 'ws-test-skill').sessionEnabled === true, '恢复跟随后仍全开');
   await unlinkGlobalSkillFromWorkspace(ws, 'ws-test-skill');
+  // after workspace off, follow-mode session sees nothing
+  view = await sessionSkillView(sid, ws);
+  ok(view.skills.every((s) => !s.sessionEnabled), '跟随模式：工作区停用后会话不再启用');
 }
 
 // --- workspace registry + lifecycle (rebind/forget) ---
