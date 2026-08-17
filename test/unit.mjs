@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import AdmZip from 'adm-zip';
 import {
   parseSkillDoc, serializeSkillDoc, validSkillFileName, scanDir, summarize,
-  editSkill, setSkillEnabled, deleteSkill, importSkillZipFromBuffer, importSkillDocs, skillsRoot, disabledRoot,
+  editSkill, setSkillEnabled, deleteSkill, importSkillZipFromBuffer, importSkillDocs, searchSkills, skillsRoot, disabledRoot,
   listWorkspaceSkills, linkGlobalSkillToWorkspace, unlinkGlobalSkillFromWorkspace,
   sessionSkillView, setSessionSkills, readSessionConfig,
   registerWorkspace, listWorkspaces, renameWorkspace, forgetWorkspace,
@@ -159,6 +159,27 @@ Body two`;
   ok(bad.results[2].error.includes('正文为空'), '空正文原因明确');
   const none = await importSkillDocs([]);
   ok(none.ok === false, '空数组拒绝');
+}
+
+// --- search across layers ---
+console.log('searchSkills');
+{
+  const byName = await searchSkills('batch-skill-one');
+  ok(byName.ok && byName.results.length === 1 && byName.results[0].name === 'batch-skill-one', '按 name 命中');
+  ok(byName.results[0].why.includes('name'), '命中字段标注 name');
+  const byDesc = await searchSkills('first batch skill');
+  ok(byDesc.ok && byDesc.results.some((r) => r.name === 'batch-skill-one'), '按 description 命中');
+  const byBody = await searchSkills('Body one');
+  ok(byBody.ok && byBody.results.some((r) => r.name === 'batch-skill-one') && byBody.results[0].snippet, '按正文命中且带片段');
+  const nothing = await searchSkills('definitely-not-there-xyz');
+  ok(nothing.ok && nothing.results.length === 0, '无匹配返回空');
+  const empty = await searchSkills('');
+  ok(empty.ok && empty.results.length === 0, '空查询返回空');
+  // case-insensitive
+  const ci = await searchSkills('FIRST BATCH SKILL');
+  ok(ci.ok && ci.results.some((r) => r.name === 'batch-skill-one'), '大小写不敏感');
+  const found = byName.results[0];
+  ok(found.layer === 'global' && found.origin === 'user', '批量导入的默认 global 层');
 }
 
 // --- delete ---
