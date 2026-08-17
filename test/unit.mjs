@@ -1,5 +1,5 @@
 // dsh-skill-manager — core logic unit tests.
-// Run: node --input-type=module test/unit.mjs
+// Run: node test/unit.mjs
 import { mkdtemp, mkdir, writeFile, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,6 +7,9 @@ import AdmZip from 'adm-zip';
 import {
   parseSkillDoc, serializeSkillDoc, validSkillFileName, scanDir, summarize,
   editSkill, setSkillEnabled, deleteSkill, importSkillZipFromBuffer, skillsRoot, disabledRoot,
+  listWorkspaceSkills, linkGlobalSkillToWorkspace, unlinkGlobalSkillFromWorkspace,
+  sessionSkillView, setSessionSkills, readSessionConfig,
+  registerWorkspace, listWorkspaces, renameWorkspace, forgetWorkspace,
 } from '../lib/index.js';
 
 let pass = 0, fail = 0;
@@ -125,6 +128,90 @@ console.log('deleteSkill');
   const r = await deleteSkill('imported-skill');
   ok(r.ok === true, '删除成功');
   ok(!(await readdir(skillsRoot())).includes('imported-skill.md'), '文件已移除');
+}
+
+// --- workspace (L1) layer ---
+console.log('linkGlobalSkillToWorkspace / listWorkspaceSkills / unlinkGlobalSkillFromWorkspace');
+{
+  // create a global skill to link
+  await writeFile(join(skillsRoot(), 'ws-test-skill.md'), `---
+name: ws-test-skill
+description: for workspace layer
+---
+# WS
+Body`, 'utf8');
+  const ws = join(home, 'projects', 'demo');
+  await mkdir(ws, { recursive: true });
+  const on = await linkGlobalSkillToWorkspace(ws, 'ws-test-skill');
+  ok(on.ok === true, '工作区启用成功');
+  const list = await listWorkspaceSkills(ws);
+  ok(list.length === 1 && list[0].name === 'ws-test-skill', 'listWorkspaceSkills 能发现 link');
+  ok(list[0].linked === true, '识别为 link');
+  const filePath = join(ws, '.dsh', 'skills', 'ws-test-skill.md');
+  const target = await readFile(filePath, 'utf8');
+  ok(target.includes('ws-test-skill'), 'link 内容与全局一致（单副本）');
+  // global edit propagates through link
+  await editSkill('ws-test-skill', { body: '# Edited by global' });
+  const after = await readFile(filePath, 'utf8');
+  ok(after.includes('Edited by global'), '全局演进经 link 自动同步到工作区');
+  const off = await unlinkGlobalSkillFromWorkspace(ws, 'ws-test-skill');
+  ok(off.ok === true, '工作区停用成功');
+  ok((await listWorkspaceSkills(ws)).length === 0, '停用后 list 为空');
+  // preset skill not workspace-manageable
+  const presetSkill = await linkGlobalSkillToWorkspace(ws, 'nope-preset');
+  ok(presetSkill.ok === false, '不存在/预设技能不可工作区管理');
+}
+
+// --- session (L2) layer ---
+console.log('setSessionSkills / sessionSkillView');
+{
+  const ws = join(home, 'projects', 'demo');
+  await linkGlobalSkillToWorkspace(ws, 'ws-test-skill');
+  const sid = 'session-abc-123';
+  // attempt to enable a skill NOT in workspace set -> filtered out
+  const r = await setSessionSkills(sid, ws, ['ws-test-skill', 'non-workspace-skill']);
+  ok(r.ok === true, 'session set 成功');
+  ok(r.cfg.enabled.length === 1 && r.cfg.enabled[0] === 'ws-test-skill', '超出工作区允许集的被过滤（交集校验）');
+  const view = await sessionSkillView(sid, ws);
+  ok(view.ok === true, 'session view 成功');
+  const wsSkill = view.skills.find((s) => s.name === 'ws-test-skill');
+  ok(wsSkill.layer === 'workspace', '工作区 link 技能 layer 标注 workspace');
+  ok(wsSkill.sessionEnabled === true, '会话勾选状态正确');
+  const cfg = await readSessionConfig(sid);
+  ok(cfg.enabled.includes('ws-test-skill'), '会话配置落盘');
+  await unlinkGlobalSkillFromWorkspace(ws, 'ws-test-skill');
+}
+
+// --- workspace registry + lifecycle (rebind/forget) ---
+console.log('registerWorkspace / listWorkspaces / renameWorkspace / forgetWorkspace');
+{
+  const ws = join(home, 'projects', 'demo');
+  const r = await registerWorkspace(ws);
+  ok(r.ok === true, '登记工作区成功');
+  const all = await listWorkspaces();
+  ok(all.length === 1 && all[0].cwd === ws, 'listWorkspaces 返回登记项');
+  ok(all[0].exists === true, '目录存在标记正确');
+  // rebind after "rename": old → new
+  const ws2 = join(home, 'projects', 'demo-renamed');
+  await mkdir(ws2, { recursive: true });
+  await registerWorkspace(ws2);
+  const rebind = await renameWorkspace(ws, ws2);
+  ok(rebind.ok === true, 'rebind 成功');
+  const after = await listWorkspaces();
+  ok(!after.some((w) => w.cwd === ws), '旧路径记录已移除');
+  ok(after.some((w) => w.cwd === ws2), '新路径记录存在');
+  // session config migration on rebind
+  await setSessionSkills('sess-migrate', ws, []);
+  const migrated = await renameWorkspace(ws2, ws);
+  ok(migrated.ok === true, '二次 rebind 成功');
+  const cfg = await readSessionConfig('sess-migrate');
+  ok(cfg.cwd === ws, '会话 cwd 随 rebind 迁移');
+  // forget: registry + orphan sessions removed, dir untouched
+  const forget = await forgetWorkspace(ws);
+  ok(forget.ok === true, 'forget 成功');
+  const afterForget = await listWorkspaces();
+  ok(!afterForget.some((w) => w.cwd === ws) && !afterForget.some((w) => w.cwd === ws2), 'forget 后注册表已清除该工作区');
+  ok((await import('node:fs/promises')).stat(ws).then(() => true).catch(() => false), '工作区目录未被删除');
 }
 
 await rm(home, { recursive: true, force: true });
