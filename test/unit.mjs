@@ -42,6 +42,10 @@ console.log('parseSkillDoc');
   ok(r.body.includes('# My Skill'), '解析正文');
   const noFm = parseSkillDoc('# no frontmatter');
   ok(noFm.frontmatter.name === undefined && noFm.body.includes('no frontmatter'), '无 frontmatter 兜底');
+  const bom = "\uFEFF" + SAMPLE;
+  const rbom = parseSkillDoc(bom);
+  ok(rbom.frontmatter.name === 'my-skill' && rbom.frontmatter.description === 'A test skill', '剥 BOM 后正常解析 frontmatter');
+  ok(rbom.body.includes('# My Skill'), 'BOM 版本正文保留');
 }
 
 console.log('serializeSkillDoc');
