@@ -255,6 +255,12 @@ console.log('setSessionSkills / sessionSkillView (follow-workspace default)');
   ok(wsSkill.sessionEnabled === true, '显式模式下勾选状态正确');
   const cfg = await readSessionConfig(sid);
   ok(cfg.enabled.includes('ws-test-skill'), '会话配置落盘');
+  // disable one skill: explicit stays true, the skill is removed from enabled
+  const disable = await setSessionSkills(sid, ws, [], true);
+  ok(disable.cfg.explicit === true, '停用后仍为显式模式');
+  ok(disable.cfg.enabled.length === 0, '停用后 enabled 集合不含该技能');
+  view = await sessionSkillView(sid, ws);
+  ok(view.skills.find((s) => s.name === 'ws-test-skill').sessionEnabled === false, '停用后会话不再启用该技能');
   // restore follow-workspace
   const back = await setSessionSkills(sid, ws, [], false);
   ok(back.cfg.explicit === false, 'explicit=false 恢复跟随');
