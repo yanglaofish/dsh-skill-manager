@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import AdmZip from 'adm-zip';
 import {
   parseSkillDoc, serializeSkillDoc, validSkillFileName, scanDir, summarize,
-  editSkill, setSkillEnabled, deleteSkill, importSkillZipFromBuffer, skillsRoot, disabledRoot,
+  editSkill, setSkillEnabled, deleteSkill, importSkillZipFromBuffer, importSkillDocs, skillsRoot, disabledRoot,
   listWorkspaceSkills, linkGlobalSkillToWorkspace, unlinkGlobalSkillFromWorkspace,
   sessionSkillView, setSessionSkills, readSessionConfig,
   registerWorkspace, listWorkspaces, renameWorkspace, forgetWorkspace,
@@ -120,6 +120,45 @@ Body here`));
   noName.addFile('SKILL.md', Buffer.from('# No frontmatter name'));
   const noNameR = await importSkillZipFromBuffer(noName.toBuffer());
   ok(noNameR.ok === false, 'frontmatter 缺 name 拒绝导入');
+}
+
+// --- import batch (folder) ---
+console.log('importSkillDocs');
+{
+  const skill1 = `---
+name: batch-skill-one
+description: first batch skill
+---
+# One
+
+Body one`;
+  const skill2 = `---
+name: batch-skill-two
+description: second batch skill
+---
+# Two
+
+Body two`;
+  const good = await importSkillDocs([
+    { source: 'skills/batch-skill-one/SKILL.md', content: skill1 },
+    { source: 'skills/batch-skill-two/SKILL.md', content: skill2 },
+  ]);
+  ok(good.ok === true && good.results.length === 2 && good.results.every((r) => r.ok), '批量导入全部成功');
+  ok((await readdir(skillsRoot())).includes('batch-skill-one.md'), 'batch-skill-one 落盘');
+  ok((await readdir(skillsRoot())).includes('batch-skill-two.md'), 'batch-skill-two 落盘');
+  // missing name / description / body, empty upload
+  const bad = await importSkillDocs([
+    { source: 'a/SKILL.md', content: '# no frontmatter' },
+    { source: 'b/SKILL.md', content: '---\nname: desc-missing\n---\nbody' },
+    { source: 'c/SKILL.md', content: '---\nname: body-missing\ndescription: x\n---\n' },
+    { source: 'd/README.md', content: 'not a skill at all' },
+  ]);
+  ok(bad.ok === true && bad.results.length === 4 && bad.results.every((r) => !r.ok), '非法项全部被拒');
+  ok(bad.results[0].error.includes('name'), '缺 name 原因明确');
+  ok(bad.results[1].error.includes('description'), '缺 description 原因明确');
+  ok(bad.results[2].error.includes('正文为空'), '空正文原因明确');
+  const none = await importSkillDocs([]);
+  ok(none.ok === false, '空数组拒绝');
 }
 
 // --- delete ---
