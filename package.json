@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Skill lifecycle manager: list, view, edit, import, delete, enable/disable skills on disk",
   "private": true,
+  "type": "module",
   "main": "lib/index.js",
   "dependencies": {
     "adm-zip": "^0.5.16",
