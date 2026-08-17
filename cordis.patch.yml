@@ -1,0 +1,9 @@
+# dsh-skill-manager bundle — insert host row + web client row into the profile composition.
+- insert:
+    - id: skill-manager
+      name: 'dsh-skill-manager'
+- insert:
+    - id: dsh-skill-manager-client
+      name: '@deepseek-ai/dsh-skill-manager'
+      config:
+        path: ./

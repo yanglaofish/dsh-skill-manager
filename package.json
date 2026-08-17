@@ -1,0 +1,30 @@
+{
+  "name": "dsh-skill-manager",
+  "version": "0.1.0",
+  "description": "Skill lifecycle manager: list, view, edit, import, delete, enable/disable skills on disk",
+  "private": true,
+  "main": "lib/index.js",
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "yaml": "^2.9.0"
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ]
+    }
+  }
+}
