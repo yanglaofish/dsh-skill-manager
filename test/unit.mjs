@@ -214,10 +214,17 @@ Body`, 'utf8');
   const filePath = join(ws, '.dsh', 'skills', 'ws-test-skill.md');
   const target = await readFile(filePath, 'utf8');
   ok(target.includes('ws-test-skill'), 'link 内容与全局一致（单副本）');
-  // global edit propagates through link
+  // global edit propagates through a symlink; a degraded copy does not
+  // auto-sync (Windows w/o Developer Mode) but stays associated by name
   await editSkill('ws-test-skill', { body: '# Edited by global' });
   const after = await readFile(filePath, 'utf8');
-  ok(after.includes('Edited by global'), '全局演进经 link 自动同步到工作区');
+  if (on.transport === 'symlink') {
+    ok(after.includes('Edited by global'), 'symlink 下全局演进自动同步到工作区');
+  } else {
+    ok(!after.includes('Edited by global'), 'copy 降级时不同步（预期，无开发者模式）');
+    const relist = await listWorkspaceSkills(ws);
+    ok(relist.length === 1 && relist[0].linked === true, 'copy 降级仍按名字识别为启用');
+  }
   const off = await unlinkGlobalSkillFromWorkspace(ws, 'ws-test-skill');
   ok(off.ok === true, '工作区停用成功');
   ok((await listWorkspaceSkills(ws)).length === 0, '停用后 list 为空');
