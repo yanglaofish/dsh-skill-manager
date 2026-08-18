@@ -1,18 +1,10 @@
 # dsh-skill-manager
 
-Skill lifecycle manager for [DeepSeek Harness](https://github.com/deepseek-ai/dsh) — list, view, edit, import, enable/disable skills across the global / workspace / session three-layer model, with a full settings UI and conversation-page tab.
-
-DeepSeek Harness 的技能生命周期管理插件：在「全局 / 工作区 / 会话」三层模型上完成技能的查看、编辑、导入、启用/停用，并提供完整的设置页与会话页 UI。
+DeepSeek Harness（DSH）的技能生命周期管理插件：在「全局 / 工作区 / 会话」三层模型上完成技能的查看、编辑、导入、启用/停用，并提供完整的设置页与会话页 UI。
 
 ---
 
-## What it does / 作用
-
-Skills (`.md` files with YAML frontmatter) are the reusable capability packages of DSH agents. This plugin gives them a management plane:
-
-- **One skill, three layers** — a skill can be enabled globally, in a workspace, or for a single session, and the effective set is the layered merge.
-- **No manual path fiddling** — the workspace picker resolves the current session's workspace automatically.
-- **Full UI** — settings page and a conversation-page tab, consistent row layout everywhere.
+## 作用
 
 技能（带 YAML frontmatter 的 `.md` 文件）是 DSH 代理的可复用能力包。本插件为它们提供管理平面：
 
@@ -22,29 +14,25 @@ Skills (`.md` files with YAML frontmatter) are the reusable capability packages 
 
 ---
 
-## Three-layer model / 三层技能模型
+## 三层技能模型
 
 ```
-┌─ Session layer  (会话层)     ~/.dsh/skill-manager/sessions/<sessionId>.json
-│    explicit subset of the workspace set; default: follow workspace
-├─ Workspace layer (工作区层)  <cwd>/.dsh/skills/
-│    symlink → global file (falls back to copy on Windows w/o Developer Mode)
-│    presence here == enabled in this workspace, overrides global by name
-└─ Global layer    (全局层)     ~/.dsh/skills/          (enabled)
-                               ~/.dsh/skills-disabled/ (disabled)
+┌─ 会话层  (Session)     ~/.dsh/skill-manager/sessions/<sessionId>.json
+│    工作区启用集的子集；默认「跟随工作区」
+├─ 工作区层 (Workspace)  <cwd>/.dsh/skills/
+│    symlink → 全局文件（Windows 无开发者模式时降级为复制）
+│    此处存在 == 在该工作区启用，同名覆盖全局
+└─ 全局层   (Global)     ~/.dsh/skills/          （启用）
+                         ~/.dsh/skills-disabled/ （停用）
 ```
 
-| Layer / 层 | Where / 位置 | Effective scope / 生效范围 | Same-name priority / 同名优先级 |
+| 层 | 位置 | 生效范围 | 同名优先级 |
 |---|---|---|---|
-| Global / 全局 | `~/.dsh/skills` | every workspace & session | low |
-| Workspace / 工作区 | `<cwd>/.dsh/skills` | that workspace (and sessions following it) | high (wins over global) |
-| Session / 会话 | session config | that session only | highest (subset of the visible set) |
+| 全局 | `~/.dsh/skills` | 所有工作区与会话 | 低 |
+| 工作区 | `<cwd>/.dsh/skills` | 该工作区（及跟随它的会话） | 高（覆盖全局） |
+| 会话 | 会话配置 | 仅该会话 | 最高（可见集内的子集） |
 
-Key semantics / 关键语义:
-
-- A **globally enabled** skill is visible everywhere; workspace enablement is **not a whitelist** — it is a same-name override (the dsh engine merges `project-dsh` roots above `user-dsh` roots and the nearest layer wins).
-- **Workspace enablement** creates a symlink to the global file (single copy, edits propagate instantly). On Windows without Developer Mode, symlinks need admin rights, so the plugin **auto-degrades to a copy** — still cross-volume, still flagged by name.
-- **Session selection**: default `follow workspace` (auto-syncs workspace changes); toggling any skill pins an explicit subset; re-checking everything restores follow.
+关键语义：
 
 - **全局启用**的技能处处可见；工作区启用**不是白名单**，而是同名覆盖（dsh 引擎将 `project-dsh` 根排在 `user-dsh` 之上，最近层胜出）。
 - **工作区启用**创建指向全局文件的 symlink（单副本、编辑即时同步）。Windows 未开启开发者模式时 symlink 需要管理员权限，插件**自动降级为复制**——仍支持跨盘，仍按名字识别为已启用。
@@ -52,24 +40,7 @@ Key semantics / 关键语义:
 
 ---
 
-## Features / 功能
-
-### Host (lib/index.js)
-- `list / get / edit / delete / enable / disable` — global layer CRUD on disk
-- `import` — skill `.zip` (root `SKILL.md` with kebab-case `name`) or **batch folder import**
-- `search` — cross-layer full-text search over name / description / whenToUse / body, with hit-field tags and snippets
-- `workspace` — register / rebind / forget workspaces, toggle skills in a workspace
-- `session` — view / set per-session skill subset (validated against the workspace allowed set)
-- Preset catalog — reads skills physically bundled inside agent presets (e.g. `cordis` preset ships `cordis-plugin-development`, `editing-cordis-compositions`) via the `agent-presets` service
-
-### Client (lib/client.js) — settings page + conversation tab
-- Stats strip: total / global enabled / global disabled / preset count / registered workspaces
-- Two tabs: **Global skills** (toggle rows, view/edit modal, delete) and **Workspace skills** (picker row above the search box)
-- Search box with debounced cross-layer results
-- **Skill detail modal**: GFM preview via dsh's own `MarkdownText` (KaTeX math, syntax-highlighted fences) + raw edit tab, frontmatter/body validation
-- Consistent **SkillRow** everywhere: whole-row click toggles, enabled = highlighted + solid dot, disabled = greyed + hollow dot; preset skills are read-only with their owning preset label
-- **Pagination** (10/page) on global list, search results, workspace and session lists — enabled skills first, preset last
-- Workspace picker auto-resolves the current session's workspace (via `ctx.sessions` + `agent-presets` service)
+## 功能
 
 ### Host（lib/index.js）
 - `list / get / edit / delete / enable / disable` — 全局层磁盘 CRUD
@@ -90,9 +61,7 @@ Key semantics / 关键语义:
 
 ---
 
-## Install / 安装
-
-The plugin is developed in-place as a git repo, installed into a profile as a `link:` dependency (junction on Windows) so restarts pick up the latest code:
+## 安装
 
 插件以 git 仓库方式就地开发，通过 `link:` 依赖（Windows 下为 junction）装入 profile，重启即加载最新代码：
 
@@ -110,33 +79,23 @@ The plugin is developed in-place as a git repo, installed into a profile as a `l
 }
 ```
 
-Then restart `dsh web`. The bundle patch (`cordis.patch.yml`) mounts the host half; the client half registers the settings section and the conversation tab.
-
 然后重启 `dsh web`。bundle patch（`cordis.patch.yml`）挂载 host 端；client 端注册设置分区与会话页 tab。
 
 ---
 
-## Development / 开发
+## 开发
 
 ```bash
-node --check lib/index.js lib/client.js   # syntax
-node test/unit.mjs                         # 83 assertions, isolated DSH_HOME
+node --check lib/index.js lib/client.js   # 语法检查
+node test/unit.mjs                        # 83 条断言，隔离 DSH_HOME
 ```
-
-- All file ops are module-level and testable without a live `ctx`; `apply()` wraps tool registration with schema normalization (equivalent to `defineTool`), which is why the 15 tools pass the model projection.
-- The plugin injects `tools`, `webServer`, `sessions`, and `agentPresets` — `sessions` is what resolves the current workspace, `agentPresets` supplies the authoritative preset roots (the bundle is junction-installed, so module-relative preset discovery would break).
 
 - 所有文件操作在模块级、无需真实 `ctx` 即可测试；`apply()` 包装工具注册做 schema 规范化（等价 `defineTool`），因此 15 个工具都能通过模型投影校验。
 - 插件注入 `tools`、`webServer`、`sessions`、`agentPresets` —— `sessions` 用于解析当前工作区，`agentPresets` 提供权威 preset 根（bundle 是 junction 安装，基于模块位置的 preset 发现会失效）。
 
 ---
 
-## Tech notes / 实现要点
-
-- **Windows cross-volume**: `~/.dsh` on C:, workspace on D: → hard links fail (`EXDEV`), symlinks need Developer Mode. The plugin tries symlink first, silently degrades to copy.
-- **UTF-8 BOM**: Windows editors often prepend a BOM that breaks the strict `^---` frontmatter delimiter — `parseSkillDoc` strips it.
-- **Tool schema**: bare `parameters` maps must be normalized to `{type:'object', properties, required}` (the model projection rejects `type: null`).
-- **Reusing dsh's renderer**: the client `require`s `@deepseek-ai/dsh-client-ui-primitives` (a seed word) for `MarkdownText` instead of bundling a markdown lib.
+## 实现要点
 
 - **Windows 跨盘**：`~/.dsh` 在 C 盘、工作区在 D 盘 → 硬链接失败（`EXDEV`），symlink 需开发者模式。插件优先 symlink、失败静默降级为复制。
 - **UTF-8 BOM**：Windows 编辑器常加 BOM，会破坏严格的 `^---` frontmatter 分隔符——`parseSkillDoc` 会剥离。
@@ -147,4 +106,4 @@ node test/unit.mjs                         # 83 assertions, isolated DSH_HOME
 
 ## License
 
-MIT (or as you prefer).
+MIT（或按你的偏好调整）。
