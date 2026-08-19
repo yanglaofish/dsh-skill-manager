@@ -10,6 +10,7 @@ import {
   listWorkspaceSkills, linkGlobalSkillToWorkspace, unlinkGlobalSkillFromWorkspace,
   sessionSkillView, setSessionSkills, readSessionConfig,
   registerWorkspace, listWorkspaces, renameWorkspace, forgetWorkspace,
+  listUnmanagedSkills, importUnmanagedSkills, scanSkillSources,
 } from '../lib/index.js';
 
 let pass = 0, fail = 0;
@@ -340,6 +341,72 @@ console.log('migrateLegacySkills');
   // idempotent
   const r2 = await migrateLegacySkills();
   ok(r2.ok === true, '重复迁移幂等');
+}
+
+// --- engine-root ghost skills: detect + adopt into the library ---
+console.log('listUnmanagedSkills / importUnmanagedSkills');
+{
+  // engine roots: user-dsh (~/.dsh/skills) + user-agents ($DSH_AGENTS_HOME/skills)
+  const userDsh = join(home, 'skills');
+  await writeFile(join(userDsh, 'ghost-a.md'), '---\nname: ghost-a\ndescription: from engine root\n---\nbody', 'utf8');
+  await writeFile(join(userDsh, 'dup-b.md'), '---\nname: batch-skill-two\ndescription: duplicate\n---\nbody', 'utf8');
+  process.env.DSH_AGENTS_HOME = join(home, 'agents');
+  const userAgents = join(home, 'agents', 'skills');
+  await mkdir(userAgents, { recursive: true });
+  await writeFile(join(userAgents, 'ghost-c.md'), '---\nname: ghost-c\ndescription: from agents root\n---\nbody', 'utf8');
+
+  const found = await listUnmanagedSkills();
+  ok(found.length === 3, '引擎根扫描到 3 个游离技能');
+  ok(found.some((s) => s.name === 'ghost-a' && !s.inLibrary), '未入库技能 inLibrary=false');
+  ok(found.some((s) => s.name === 'batch-skill-two' && s.inLibrary), '库中同名识别为 inLibrary=true');
+
+  const adopted = await importUnmanagedSkills();
+  ok(adopted.ok === true, '收纳执行成功');
+  ok(adopted.imported.includes('ghost-a') && adopted.imported.includes('ghost-c'), '未入库技能导入库');
+  ok(!adopted.imported.includes('batch-skill-two'), '库 wins：同名不重复导入');
+  ok(adopted.removed.length === 3, '引擎根副本全部移除');
+  const libFiles = await readdir(skillsRoot());
+  ok(libFiles.includes('ghost-a.md') && libFiles.includes('ghost-c.md'), '收纳后库内可扫描');
+  ok((await readdir(userDsh)).filter((n) => n.endsWith('.md')).length === 0, 'user-dsh 根已清空');
+  ok((await readdir(userAgents)).filter((n) => n.endsWith('.md')).length === 0, 'user-agents 根已清空');
+  const again = await importUnmanagedSkills();
+  ok(again.imported.length === 0 && again.removed.length === 0, '二次收纳幂等（无残留）');
+  await rm(userAgents, { recursive: true, force: true });
+  delete process.env.DSH_AGENTS_HOME;
+}
+
+// --- project-level scan: workspace whitelist + project .agents/skills ---
+console.log('scanSkillSources（项目级）');
+{
+  const wsProj = join(home, 'projects', 'proj-a');
+  await mkdir(join(wsProj, '.dsh', 'skills'), { recursive: true });
+  await mkdir(join(wsProj, '.agents', 'skills'), { recursive: true });
+  await registerWorkspace(wsProj);
+  // workspace-authored local skill (missing from the library)
+  await writeFile(join(wsProj, '.dsh', 'skills', 'local-only.md'), '---\nname: local-only\ndescription: workspace authored\n---\nbody', 'utf8');
+  // managed whitelist copy of an existing library skill (must NOT be listed)
+  await writeFile(join(wsProj, '.dsh', 'skills', 'batch-skill-one.md'), '---\nname: batch-skill-one\ndescription: dup\n---\nbody', 'utf8');
+  // project .agents/skills (engine project root)
+  await writeFile(join(wsProj, '.agents', 'skills', 'agent-only.md'), '---\nname: agent-only\ndescription: project agents\n---\nbody', 'utf8');
+
+  const found = await listUnmanagedSkills();
+  const names = found.map((f) => f.name);
+  ok(names.includes('local-only'), '本地产技能列入游离');
+  ok(names.includes('agent-only'), '项目 .agents/skills 列入游离');
+  ok(!names.includes('batch-skill-one'), '白名单中库同名副本不视为游离');
+  const lo = found.find((f) => f.name === 'local-only');
+  ok(lo && lo.adopt === 'keep' && lo.workspace === wsProj, '工作区 .dsh/skills 标记 keep');
+  const ao = found.find((f) => f.name === 'agent-only');
+  ok(ao && ao.adopt === 'move', '项目 .agents/skills 标记 move');
+
+  const r = await importUnmanagedSkills();
+  ok(r.imported.includes('local-only') && r.imported.includes('agent-only'), '两类源均导入库');
+  ok(r.removed.length === 1 && r.removed[0] === 'agent-only', '仅 move 源移除（agent-only）');
+  const wsFiles = (await readdir(join(wsProj, '.dsh', 'skills'))).filter((n) => n.endsWith('.md'));
+  ok(wsFiles.includes('local-only.md') && wsFiles.includes('batch-skill-one.md'), '工作区白名单副本保留（该工作区保持启用）');
+  ok((await readdir(join(wsProj, '.agents', 'skills'))).filter((n) => n.endsWith('.md')).length === 0, '项目 agents 源已清空');
+  const libFiles2 = await readdir(skillsRoot());
+  ok(libFiles2.includes('local-only.md') && libFiles2.includes('agent-only.md'), '项目级技能纳入库后可扫描');
 }
 
 await rm(home, { recursive: true, force: true });
