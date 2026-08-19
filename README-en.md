@@ -31,7 +31,7 @@ dsh web
 
 **Recommended: manage from the UI** — after starting `dsh web`, open Settings → Skill Management:
 
-- **Global skills** tab: click a row to toggle enable/disable; "View/Edit" opens a detail modal (rendered Markdown preview + 📁 file browser: read-only by default, click "✏ Edit" to edit, save/cancel in the top bar, 2MB save cap); the "Import skill" button accepts a skill zip (≤50MB, ≤100MB expanded) or an entire folder for batch import.
+- **Global skills** tab: click a row to toggle enable/disable; "View/Edit" opens a detail modal (opens **straight into the file browser**, defaulting to the skill's SKILL.md document; click "✏ Edit" to edit, save/cancel in the top bar, 2MB save cap); the "Import skill" button accepts a skill zip (≤50MB, ≤100MB expanded) or an entire folder for batch import.
 - **Workspace skills** tab: pick a workspace from the dropdown at the top (auto-resolves the current session's workspace); the list below shows which skills are enabled there (disabled rows get a grey outline); preset skills are read-only and labelled with their owning preset.
 - **Search box**: type a keyword for cross-layer full-text search (name / description / whenToUse / body); results annotate hit fields and show context snippets.
 - **Conversation "Skills" tab**: view and temporarily adjust the current session's enabled skills.
@@ -72,7 +72,7 @@ dsh-skill-manager
 │       ├── SkillManagerPanel     settings: stats strip + two tabs + search +
 │       │                         pagination + detail modal
 │       ├── WorkspaceSkillsPanel  workspace/session skill panel
-│       ├── SkillDetailModal      detail modal: preview + file browser/editor
+│       ├── SkillDetailModal      detail modal: file browser (defaults to SKILL.md) + editor
 │       └── SkillRow              shared row component for all three surfaces
 ├── cordis.patch.yml          bundle patch: mounts the host plugin row
 ├── test/
