@@ -228,6 +228,22 @@ Body`, 'utf8');
   ok(presetSkill.ok === false, '不存在/预设技能不可工作区管理');
 }
 
+// --- search with workspace context (drives enable/disable in the search UI) ---
+console.log('searchSkills(cwd)');
+{
+  const w2 = join(home, 'projects', 'search-ws');
+  await mkdir(w2, { recursive: true });
+  const on = await searchSkills('batch-skill-one', w2);
+  ok(on.ok && on.results.some((r) => r.name === 'batch-skill-one' && r.wsEnabled === false && r.wsCwd === w2), '未启用工作区 wsEnabled=false');
+  await linkGlobalSkillToWorkspace(w2, 'batch-skill-one');
+  const yes = await searchSkills('batch-skill-one', w2);
+  ok(yes.ok && yes.results.some((r) => r.name === 'batch-skill-one' && r.wsEnabled === true), '启用后 wsEnabled=true');
+  await unlinkGlobalSkillFromWorkspace(w2, 'batch-skill-one');
+  // no cwd supplied → wsEnabled falls back to plain boolean
+  const plain = await searchSkills('batch-skill-one');
+  ok(plain.ok && plain.results.some((r) => typeof r.wsEnabled === 'boolean'), '无 cwd 时 wsEnabled 仍为布尔');
+}
+
 // --- session (L2) layer ---
 console.log('setSessionSkills / sessionSkillView (follow-workspace default)');
 {
