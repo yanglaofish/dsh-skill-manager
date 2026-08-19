@@ -609,6 +609,13 @@ console.log('error boundaries');
   const free = await setSessionSkills('pin-session', ws, ['ws-test-skill', 'my-skill', 'no-such-skill']);
   ok(free.ok === true && free.cfg.enabled.includes('ws-test-skill') && free.cfg.enabled.includes('my-skill'), '会话可自由启用库中技能（含工作区未启用者）');
   ok(!free.cfg.enabled.includes('no-such-skill'), '非库技能名仍被过滤');
+  // explicit rendering: the view must show the pinned library skill as
+  // session-enabled even though the workspace never enabled it
+  const vv = await sessionSkillView('pin-session', ws);
+  ok(vv.ok === true && vv.skills.find((s) => s.name === 'my-skill')?.sessionEnabled === true, '会话视图：工作区未启用但会话勾选的库技能生效显示');
+  // follow default: an un-pinned session tracks the workspace set
+  const vf = await sessionSkillView('follow-probe', ws);
+  ok(vf.ok === true && vf.session.explicit === false && vf.skills.find((s) => s.name === 'ws-test-skill')?.sessionEnabled === true, '未勾选过的会话默认跟随工作区');
 
   // migrateLegacySkills: idempotent after the first run, and the library
   // content is never overwritten by a legacy duplicate
