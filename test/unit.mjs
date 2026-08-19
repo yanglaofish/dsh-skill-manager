@@ -7,6 +7,7 @@ import AdmZip from 'adm-zip';
 import {
   parseSkillDoc, serializeSkillDoc, validSkillFileName, scanDir, summarize,
   editSkill, setSkillEnabled, deleteSkill, importSkillZipFromBuffer, importSkillDocs, searchSkills, skillsRoot, disabledRoot, migrateLegacySkills,
+  findSkill,
   listWorkspaceSkills, linkGlobalSkillToWorkspace, unlinkGlobalSkillFromWorkspace,
   sessionSkillView, setSessionSkills, readSessionConfig,
   registerWorkspace, listWorkspaces, renameWorkspace, forgetWorkspace,
@@ -159,6 +160,25 @@ Body two`;
   ok(bad.results[2].error.includes('正文为空'), '空正文原因明确');
   const none = await importSkillDocs([]);
   ok(none.ok === false, '空数组拒绝');
+}
+
+// --- directory-form skills (<dir>/SKILL.md) ---
+console.log('scanDir (directory form)');
+{
+  const skillDir = join(skillsRoot(), 'dir-skill');
+  await mkdir(skillDir, { recursive: true });
+  await writeFile(join(skillDir, 'SKILL.md'), '---\nname: dir-skill\ndescription: a directory skill\n---\n# Dir skill body', 'utf8');
+  await writeFile(join(skillDir, 'reference.md'), 'extra ref', 'utf8');
+  const found = await scanDir(skillsRoot());
+  const ds = found.find((s) => s.name === 'dir-skill');
+  ok(ds && ds.form === 'dir', '目录形式技能被 scanDir 识别');
+  ok(ds && ds.filePath.endsWith('SKILL.md'), 'filePath 指向 SKILL.md');
+  ok(ds && ds.dir === skillDir, 'dir 字段指向技能目录');
+  const entry = await findSkill('dir-skill');
+  ok(entry && entry.name === 'dir-skill' && entry.form === 'dir', 'findSkill 找到目录形式技能');
+  const r = await deleteSkill('dir-skill');
+  ok(r.ok === true, '删除目录形式技能成功');
+  ok(!(await readdir(skillsRoot())).includes('dir-skill'), '技能目录已移除');
 }
 
 // --- search across layers ---
