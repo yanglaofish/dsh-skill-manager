@@ -1,7 +1,7 @@
 {
   "name": "dsh-skill-manager",
-  "version": "0.1.0",
-  "description": "Skill lifecycle manager: list, view, edit, import, delete, enable/disable skills on disk",
+  "version": "4.0.0",
+  "description": "Skill lifecycle manager: library / workspace / session three-layer skill management for DSH",
   "private": true,
   "type": "module",
   "main": "lib/index.js",
