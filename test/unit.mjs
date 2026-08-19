@@ -331,6 +331,12 @@ console.log('migrateLegacySkills');
   ok(libFiles.includes('legacy-a.md') && libFiles.includes('legacy-b.md'), '旧技能移入技能库');
   const migrated = await scanDir(skillsRoot());
   ok(migrated.length >= 2, '库内技能可扫描');
+  // the legacy global root must be emptied — the engine still loads
+  // ~/.dsh/skills for every session, so leftover copies would bypass the
+  // workspace whitelist (this is why unregistered skills showed up globally)
+  const legacyLeft = (await readdir(legacyRoot)).filter((n) => n.endsWith('.md'));
+  const disabledLeft = (await readdir(legacyDisabled)).filter((n) => n.endsWith('.md'));
+  ok(legacyLeft.length === 0 && disabledLeft.length === 0, '旧根已清空（引擎不再全局加载）');
   // idempotent
   const r2 = await migrateLegacySkills();
   ok(r2.ok === true, '重复迁移幂等');
