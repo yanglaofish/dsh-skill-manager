@@ -75,20 +75,20 @@ dsh-skill-manager
 └── package.json              bundle manifest: exports + dsh.client
 ```
 
-**Core design principle**: a skill's state has a single source of truth — the on-disk directory layout. Global enablement lives in `~/.dsh/skills`, workspace enablement in `<cwd>/.dsh/skills`, session selection in a dedicated JSON; every UI and tool reads the same disk facts, so there is never a fork between in-memory state and disk state.
+**Core design principle**: a skill's state has a single source of truth — the on-disk directory layout. Skills live in the library (`~/.dsh/skill-manager/library/`, not scanned by the engine), workspace enablement is the whitelist in `<cwd>/.dsh/skills` (the only engine-visible source), session selection sits in a dedicated JSON; every UI and tool reads the same disk facts, so there is never a fork between in-memory state and disk state.
 
 ### Three-layer model
 
 ```
 ┌─ Session layer  (Session)     ~/.dsh/skill-manager/sessions/<sessionId>.json
 │    subset of the workspace set; default: follow workspace
-├─ Workspace layer (Workspace)  <cwd>/.dsh/skills/
-│    symlink → global file (degrades to copy on Windows without Developer Mode)
-└─ Global layer    (Global)     ~/.dsh/skills/          (enabled)
-                                ~/.dsh/skills-disabled/ (disabled)
+├─ Workspace layer (Workspace)  <cwd>/.dsh/skills/   ← the engine's only scanned workspace root
+│    symlink/copy → library file; presence == enabled here
+└─ Library layer   (Library)    ~/.dsh/skill-manager/library/  ← pure skill pool, not scanned
+                                every user skill lives here; no enable/disable concept
 ```
 
-Layers merge along the global → workspace → session scope chain; **the nearest layer wins a duplicate name**. A globally enabled skill is visible everywhere; workspace enablement is a same-name override (the dsh engine ranks `project-dsh` roots above `user-dsh` roots); session selection is a subset of the visible set.
+**Key semantics**: the library is **not** "globally enabled" — a skill in the library is invisible to every workspace until a workspace checks it into `<cwd>/.dsh/skills` (whitelist). This removes the old-model conflict ("enabled globally but this project doesn't want it"): enablement is decided by each project. The dsh engine only scans the workspace's `.dsh/skills` (project-dsh root) and presets; the library under `~/.dsh/skill-manager/` is never discovered, so the whitelist is enforced natively.
 
 ### Key modules
 
@@ -107,7 +107,7 @@ Layers merge along the global → workspace → session scope chain; **the neare
 
 **List view (/list)**
 
-`scanDir(skillsRoot()) + scanDir(disabledRoot()) + scanPresetSkills() + listWorkspaces()` collected in parallel and merged into an enabled → disabled → preset array, returned together with the stats strip (total / global enabled / global disabled / preset count / registered workspaces).
+`scanDir(skillsRoot()) + scanPresetSkills() + listWorkspaces()` collected in parallel and merged into a library → preset array, returned together with the stats strip (library total / preset count / registered workspaces).
 
 **Workspace resolution (/view)**
 

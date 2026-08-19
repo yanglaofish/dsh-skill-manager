@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import AdmZip from 'adm-zip';
 import {
   parseSkillDoc, serializeSkillDoc, validSkillFileName, scanDir, summarize,
-  editSkill, setSkillEnabled, deleteSkill, importSkillZipFromBuffer, importSkillDocs, searchSkills, skillsRoot, disabledRoot,
+  editSkill, setSkillEnabled, deleteSkill, importSkillZipFromBuffer, importSkillDocs, searchSkills, skillsRoot, disabledRoot, migrateLegacySkills,
   listWorkspaceSkills, linkGlobalSkillToWorkspace, unlinkGlobalSkillFromWorkspace,
   sessionSkillView, setSessionSkills, readSessionConfig,
   registerWorkspace, listWorkspaces, renameWorkspace, forgetWorkspace,
@@ -88,17 +88,12 @@ console.log('editSkill');
   ok(missing.ok === false, '不存在返回错误');
 }
 
-// --- enable / disable ---
-console.log('setSkillEnabled');
+// --- enable / disable is gone in the library model ---
+console.log('setSkillEnabled (deprecated)');
 {
   const off = await setSkillEnabled('my-skill', false);
-  ok(off.ok === true && off.enabled === false, '禁用成功');
-  ok((await readdir(skillsRoot())).length === 0, 'active 目录已清空');
-  const disabledFiles = await readdir(disabledRoot());
-  ok(disabledFiles.includes('my-skill.md'), '文件移入 skills-disabled');
-  const on = await setSkillEnabled('my-skill', true);
-  ok(on.ok === true && on.enabled === true, '启用成功');
-  ok((await readdir(skillsRoot())).includes('my-skill.md'), '文件移回 active');
+  ok(off.ok === false, '全局启用/停用已移除（stub 拒绝）');
+  ok((await readdir(skillsRoot())).includes('my-skill.md'), '技能仍在库中（未被移动）');
 }
 
 // --- import zip ---
@@ -302,6 +297,27 @@ console.log('registerWorkspace / listWorkspaces / renameWorkspace / forgetWorksp
   const afterForget = await listWorkspaces();
   ok(!afterForget.some((w) => w.cwd === ws) && !afterForget.some((w) => w.cwd === ws2), 'forget 后注册表已清除该工作区');
   ok((await import('node:fs/promises')).stat(ws).then(() => true).catch(() => false), '工作区目录未被删除');
+}
+
+// --- legacy → library migration ---
+console.log('migrateLegacySkills');
+{
+  // simulate the old layout inside this isolated home
+  const legacyRoot = join(home, 'skills');
+  const legacyDisabled = join(home, 'skills-disabled');
+  await mkdir(legacyRoot, { recursive: true });
+  await mkdir(legacyDisabled, { recursive: true });
+  await writeFile(join(legacyRoot, 'legacy-a.md'), '---\nname: legacy-a\ndescription: a\n---\nbody-a', 'utf8');
+  await writeFile(join(legacyDisabled, 'legacy-b.md'), '---\nname: legacy-b\ndescription: b\n---\nbody-b', 'utf8');
+  const r = await migrateLegacySkills();
+  ok(r.ok === true, '迁移执行成功');
+  const libFiles = await readdir(skillsRoot());
+  ok(libFiles.includes('legacy-a.md') && libFiles.includes('legacy-b.md'), '旧技能移入技能库');
+  const migrated = await scanDir(skillsRoot());
+  ok(migrated.length >= 2, '库内技能可扫描');
+  // idempotent
+  const r2 = await migrateLegacySkills();
+  ok(r2.ok === true, '重复迁移幂等');
 }
 
 await rm(home, { recursive: true, force: true });
