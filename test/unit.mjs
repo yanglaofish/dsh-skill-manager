@@ -12,6 +12,8 @@ import {
   sessionSkillView, setSessionSkills, readSessionConfig,
   registerWorkspace, listWorkspaces, renameWorkspace, forgetWorkspace,
   listUnmanagedSkills, importUnmanagedSkills, scanSkillSources, listSkillFiles,
+  readSkillFile, writeSkillFile,
+  isAbsolutePath, samePath, errMsg, bareSkillName,
 } from '../lib/index.js';
 
 let pass = 0, fail = 0;
@@ -494,12 +496,126 @@ console.log('security guards');
   ok(noCwd.ok === false, '会话勾选要求绝对路径 cwd');
   const s = await sessionSkillView('../../traverse/', ws);
   ok(s.ok === true && s.session.enabled.length === 0 && s.session.explicit === false, '恶意 sessionId 读取安全降级（不越权、无选择项）');
-  // zip with too many entries rejected
+}
+
+// --- error boundaries: every rule must hold on the bad path too ---
+console.log('error boundaries');
+{
+  const ws = join(home, 'projects', 'demo'); // registered in earlier sections
+  // pure helpers
+  ok(errMsg(new Error('boom')) === 'boom' && errMsg('raw') === 'raw' && errMsg(42) === '42', 'errMsg 文本化（不递归）');
+  ok(isAbsolutePath(skillsRoot()) && isAbsolutePath(home), '绝对路径识别');
+  ok(!isAbsolutePath('rel/path') && !isAbsolutePath('') && !isAbsolutePath('.\\x'), '相对/空/加点 拒绝');
+  ok(bareSkillName('a-skill.md') === 'a-skill' && bareSkillName('a-skill') === 'a-skill', 'bareSkillName 去后缀');
+
+  // scanDir ignores non-skill dirs and stray .md files (dir form only)
+  await mkdir(join(skillsRoot(), 'not-a-skill'), { recursive: true }); // no SKILL.md
+  await writeFile(join(skillsRoot(), 'stray.md'), 'not a skill', 'utf8');
+  const scan1 = await scanDir(skillsRoot());
+  ok(!scan1.some((s) => s.name === 'not-a-skill') && !scan1.some((s) => s.name === 'stray'), 'scanDir 忽略无 SKILL.md 目录与单文件');
+  await rm(join(skillsRoot(), 'not-a-skill'), { recursive: true, force: true });
+  await rm(join(skillsRoot(), 'stray.md'), { force: true });
+
+  // readSkillFile / writeSkillFile path-escape guards
+  const esc1 = await readSkillFile('my-skill', '../outside.md');
+  ok(esc1.ok === false, 'readSkillFile 拒绝 .. 路径');
+  const esc2 = await readSkillFile('my-skill', 'C:\\windows\\win.ini');
+  ok(esc2.ok === false, 'readSkillFile 拒绝绝对路径');
+  const esc3 = await writeSkillFile('my-skill', '../outside.md', 'x');
+  ok(esc3.ok === false, 'writeSkillFile 拒绝 .. 路径');
+  const esc4 = await writeSkillFile('my-skill', '', 'x');
+  ok(esc4.ok === false, 'writeSkillFile 拒绝空路径');
+  const missing = await readSkillFile('my-skill', 'no-such-file.md');
+  ok(missing.ok === false, '读取不存在文件返回错误');
+
+  // zip import error branches
+  const zEmpty = await importSkillZipFromBuffer(Buffer.alloc(0));
+  ok(zEmpty.ok === false, '空 zip 拒绝');
+  const zCorrupt = await importSkillZipFromBuffer(Buffer.from('this is definitely not a zip file'));
+  ok(zCorrupt.ok === false, '损坏 zip 拒绝（不 throw）');
+  const zNoMd = new AdmZip(); zNoMd.addFile('readme.txt', Buffer.from('hi'));
+  ok((await importSkillZipFromBuffer(zNoMd.toBuffer())).ok === false, '无 SKILL.md 的 zip 拒绝');
+  const zNoName = new AdmZip(); zNoName.addFile('SKILL.md', Buffer.from('---\ndescription: no name\n---\nbody'));
+  ok((await importSkillZipFromBuffer(zNoName.toBuffer())).ok === false, 'SKILL.md 缺 name 拒绝');
+  // traversal entries inside the zip must not escape the skill dir
+  const zEvil = new AdmZip();
+  zEvil.addFile('SKILL.md', Buffer.from('---\nname: zip-skill\ndescription: x\n---\nbody'));
+  zEvil.addFile('../evil.md', Buffer.from('nope'));
+  zEvil.addFile('/abs.md', Buffer.from('nope'));
+  zEvil.addFile('sub/ref.txt', Buffer.from('ref'));
+  const zEvilR = await importSkillZipFromBuffer(zEvil.toBuffer());
+  ok(zEvilR.ok === true, '含穿越条目的 zip 本体导入成功');
+  // AdmZip normalizes ../ and leading-/ entry names; the escape guard
+  // (parts + startsWith) guarantees nothing lands OUTSIDE the skill dir.
+  ok(!(await readdir(join(skillsRoot(), '..'))).includes('evil.md'), '穿越条目未逃逸出技能库');
+  const zdir = await readdir(join(skillsRoot(), 'zip-skill'));
+  ok(zdir.includes('SKILL.md'), 'zip 内 SKILL.md 还原');
+  ok((await readdir(join(skillsRoot(), 'zip-skill', 'sub'))).includes('ref.txt'), 'zip 内合法子目录/文件还原');
+  // zip bomb: too many entries rejected by cap
   const big = new AdmZip();
   for (let i = 0; i < 1001; i++) big.addFile(`f${i}.bin`, Buffer.alloc(4));
   big.addFile('SKILL.md', Buffer.from('---\nname: bomb-skill\ndescription: x\n---\nbody'));
   const bomb = await importSkillZipFromBuffer(big.toBuffer());
   ok(bomb.ok === false, '超量条目 zip 拒绝（zip bomb 防护）');
+
+  // importSkillDocs validation branches
+  const docNoName = { source: 'a', content: '---\ndescription: x\n---\nbody' };
+  const docBadName = { source: 'b', content: '---\nname: Bad Name\ndescription: x\n---\nbody' };
+  const docNoDesc = { source: 'c', content: '---\nname: ok-name\n---\nbody' };
+  const docNoBody = { source: 'd', content: '---\nname: bodyless\n---\n' };
+  const docBad = await importSkillDocs([docNoName, docBadName, docNoDesc, docNoBody]);
+  ok(docBad.results.every((r) => r.ok === false), '缺 name/非法 name/缺 description/缺 body 全部拒绝');
+  // >200 items truncated
+  const many = Array.from({ length: 201 }, (_, i) => ({ source: `s${i}`, content: `---\nname: bulk-${i}\ndescription: x\n---\nbody` }));
+  const cut = await importSkillDocs(many);
+  ok(cut.results.length === 200, '批量导入截断在 200 条');
+
+  // unlink idempotent when already off
+  const off2 = await unlinkGlobalSkillFromWorkspace(ws, 'ws-test-skill');
+  ok(off2.ok === true, '停用已停用的技能幂等成功');
+  const off3 = await unlinkGlobalSkillFromWorkspace(ws, 'no-such-skill');
+  ok(off3.ok === true, '停用不存在的技能幂等成功');
+
+  // renameWorkspace / forgetWorkspace edges
+  const rnMissing = await renameWorkspace(join(home, 'projects', 'ghost'), join(home, 'projects', 'ghost2'));
+  ok(rnMissing.ok === false, '重命名未登记工作区报错');
+  const rnSame = await renameWorkspace(ws, ws);
+  ok(rnSame.ok === true, '重命名到相同路径成功（no-op）');
+  const fgGhost = await forgetWorkspace(join(home, 'projects', 'ghost'));
+  ok(fgGhost.ok === true && fgGhost.existed === false, '忘记未登记工作区幂等（existed=false）');
+
+  // normalizeSkillDirs failure: <root>/<base> is an existing FILE → cannot mkdir
+  const badRoot = join(home, 'badroot');
+  await mkdir(badRoot, { recursive: true });
+  await writeFile(join(badRoot, 'clash.md'), '---\nname: clash\n---\nbody', 'utf8');
+  await writeFile(join(badRoot, 'clash'), 'i am a file, not a dir', 'utf8');
+  const nf = await normalizeSkillDirs([badRoot]);
+  ok(nf.ok === true && nf.failed.some((f) => f.includes('clash')), '转换失败被记录到 failed（不 throw）');
+
+  // readSessionConfig: corrupt JSON → safe defaults
+  const sessDir = join(home, 'skill-manager', 'sessions');
+  await mkdir(sessDir, { recursive: true });
+  await writeFile(join(sessDir, 'corrupt.json'), '{not json', 'utf8');
+  const cfg = await readSessionConfig('corrupt');
+  ok(cfg.explicit === false && cfg.enabled.length === 0, '损坏会话配置降级为默认值');
+  await writeFile(join(sessDir, 'mixed.json'), JSON.stringify({ explicit: true, enabled: [1, 'ok-name', null, ''] }), 'utf8');
+  const cfg2 = await readSessionConfig('mixed');
+  ok(cfg2.enabled.join(',') === 'ok-name', '会话 enabled 过滤非字符串');
+
+  // setSessionSkills intersection filter: names outside the workspace set dropped
+  await linkGlobalSkillToWorkspace(ws, 'ws-test-skill');
+  const intersect = await setSessionSkills('pin-session', ws, ['ws-test-skill', 'not-in-workspace']);
+  ok(intersect.ok === true && intersect.cfg.enabled.join(',') === 'ws-test-skill', '会话勾选与工作区启用集取交集');
+
+  // migrateLegacySkills: idempotent after the first run, and the library
+  // content is never overwritten by a legacy duplicate
+  const legacyRoot = join(home, 'skills');
+  await mkdir(legacyRoot, { recursive: true });
+  await writeFile(join(legacyRoot, 'my-skill.md'), '---\nname: my-skill\ndescription: dup\n---\ndup body', 'utf8');
+  const dup = await migrateLegacySkills();
+  ok(dup.alreadyDone === true, '迁移幂等（第二次运行 no-op，不重复处理）');
+  const dupEntry = await findSkill('my-skill');
+  ok(dupEntry && !/dup body/.test(dupEntry.body), '库同名优先：库内容不被旧副本覆盖');
 }
 
 await rm(home, { recursive: true, force: true });
