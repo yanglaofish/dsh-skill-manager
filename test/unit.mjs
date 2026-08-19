@@ -483,10 +483,15 @@ console.log('security guards');
   // non-absolute cwd on reads falls back to the library instead of traversing
   const viaRel = await listSkillFiles('my-skill', '../..');
   ok(viaRel.ok === true, '非法 cwd 读取回退库而非上级目录');
-  // sessionId traversal on write
+  // sessionId traversal on write (invalid cwd short-circuits before the fs)
+  const evilSession = await setSessionSkills('../evil', '', []);
+  ok(evilSession.ok === false, '恶意 sessionId 写入被拒（cwd 短路径）');
   let sessionBlocked = false;
-  try { await setSessionSkills('../evil', '', []); } catch { sessionBlocked = true; }
-  ok(sessionBlocked === true, '恶意 sessionId 写入被拒');
+  try { await setSessionSkills('../evil', ws, []); } catch { sessionBlocked = true; }
+  ok(sessionBlocked === true, '恶意 sessionId 写入被拒（identifier 校验）');
+  // empty/non-absolute cwd for session pins is rejected with a clear error
+  const noCwd = await setSessionSkills('ok-session', '', ['my-skill']);
+  ok(noCwd.ok === false, '会话勾选要求绝对路径 cwd');
   const s = await sessionSkillView('../../traverse/', ws);
   ok(s.ok === true && s.session.enabled.length === 0 && s.session.explicit === false, '恶意 sessionId 读取安全降级（不越权、无选择项）');
   // zip with too many entries rejected
