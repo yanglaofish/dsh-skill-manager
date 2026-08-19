@@ -11,7 +11,7 @@ import {
   listWorkspaceSkills, linkGlobalSkillToWorkspace, unlinkGlobalSkillFromWorkspace,
   sessionSkillView, setSessionSkills, readSessionConfig,
   registerWorkspace, listWorkspaces, renameWorkspace, forgetWorkspace,
-  listUnmanagedSkills, importUnmanagedSkills, scanSkillSources,
+  listUnmanagedSkills, importUnmanagedSkills, scanSkillSources, listSkillFiles,
 } from '../lib/index.js';
 
 let pass = 0, fail = 0;
@@ -228,6 +228,7 @@ description: for workspace layer
 Body`, 'utf8');
   const ws = join(home, 'projects', 'demo');
   await mkdir(ws, { recursive: true });
+  await registerWorkspace(ws); // write-side ops require a registered workspace
   const on = await linkGlobalSkillToWorkspace(ws, 'ws-test-skill');
   ok(on.ok === true, '工作区启用成功');
   const list = await listWorkspaceSkills(ws);
@@ -260,6 +261,7 @@ console.log('searchSkills(cwd)');
 {
   const w2 = join(home, 'projects', 'search-ws');
   await mkdir(w2, { recursive: true });
+  await registerWorkspace(w2);
   const on = await searchSkills('batch-skill-one', w2);
   ok(on.ok && on.results.some((r) => r.name === 'batch-skill-one' && r.wsEnabled === false && r.wsCwd === w2), '未启用工作区 wsEnabled=false');
   await linkGlobalSkillToWorkspace(w2, 'batch-skill-one');
@@ -317,8 +319,8 @@ console.log('registerWorkspace / listWorkspaces / renameWorkspace / forgetWorksp
   const r = await registerWorkspace(ws);
   ok(r.ok === true, '登记工作区成功');
   const all = await listWorkspaces();
-  ok(all.length === 1 && all[0].cwd === ws, 'listWorkspaces 返回登记项');
-  ok(all[0].exists === true, '目录存在标记正确');
+  ok(all.some((w) => w.cwd === ws), 'listWorkspaces 返回登记项');
+  ok(all.find((w) => w.cwd === ws).exists === true, '目录存在标记正确');
   // rebind after "rename": old → new
   const ws2 = join(home, 'projects', 'demo-renamed');
   await mkdir(ws2, { recursive: true });
@@ -457,6 +459,42 @@ console.log('normalizeSkillDirs');
   ok((await readdir(join(extra, 'legacy'))).includes('SKILL.md'), '目录形式 SKILL.md 已写入');
   const r2 = await normalizeSkillDirs([extra]);
   ok(r2.converted.length === 0, '幂等：无单文件可转');
+}
+
+// --- security guards: traversal / unregistered workspace / identifier hygiene ---
+console.log('security guards');
+{
+  const ws = join(home, 'projects', 'demo'); // re-register (registry test forgot it)
+  await registerWorkspace(ws);
+  const relink = await linkGlobalSkillToWorkspace(ws, 'ws-test-skill');
+  ok(relink.ok === true, 'security 段先行启用技能');
+  // unlink target name is interpolated into rm() → must reject traversal
+  const evil1 = await unlinkGlobalSkillFromWorkspace(ws, '..');
+  ok(evil1.ok === false, 'unlink 拒绝 ".." 技能名');
+  const evil2 = await unlinkGlobalSkillFromWorkspace(ws, '../../outside');
+  ok(evil2.ok === false, 'unlink 拒绝深层穿越技能名');
+  const evil3 = await unlinkGlobalSkillFromWorkspace(ws, 'ws-test-skill.md');
+  ok(evil3.ok === true, '合法名（去 .md 后缀）可正常停用');
+  // write-side ops require a REGISTERED workspace
+  const unreg = await linkGlobalSkillToWorkspace(join(home, 'projects', 'not-known'), 'ws-test-skill');
+  ok(unreg.ok === false, '未注册工作区拒绝 link');
+  const rel = await linkGlobalSkillToWorkspace('..\\..\\sub', 'ws-test-skill');
+  ok(rel.ok === false, '相对 cwd 拒绝');
+  // non-absolute cwd on reads falls back to the library instead of traversing
+  const viaRel = await listSkillFiles('my-skill', '../..');
+  ok(viaRel.ok === true, '非法 cwd 读取回退库而非上级目录');
+  // sessionId traversal on write
+  let sessionBlocked = false;
+  try { await setSessionSkills('../evil', '', []); } catch { sessionBlocked = true; }
+  ok(sessionBlocked === true, '恶意 sessionId 写入被拒');
+  const s = await sessionSkillView('../../traverse/', ws);
+  ok(s.ok === true && s.session.enabled.length === 0 && s.session.explicit === false, '恶意 sessionId 读取安全降级（不越权、无选择项）');
+  // zip with too many entries rejected
+  const big = new AdmZip();
+  for (let i = 0; i < 1001; i++) big.addFile(`f${i}.bin`, Buffer.alloc(4));
+  big.addFile('SKILL.md', Buffer.from('---\nname: bomb-skill\ndescription: x\n---\nbody'));
+  const bomb = await importSkillZipFromBuffer(big.toBuffer());
+  ok(bomb.ok === false, '超量条目 zip 拒绝（zip bomb 防护）');
 }
 
 await rm(home, { recursive: true, force: true });
