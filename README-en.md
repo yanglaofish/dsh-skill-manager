@@ -6,7 +6,7 @@ DSH "skills" are Markdown files with YAML frontmatter — the reusable capabilit
 
 - **Global skills** — list / view / edit / import / delete every skill (directory form: folder + SKILL.md). The library is a pure skill pool; it does not decide enablement.
 - **Workspace skills** — each project maintains its own skill set (living in the project directory); **the only enable switch**: checked = enabled there, unchecked = invisible there.
-- **Session skills** — temporarily toggle skills for the current session; defaults to *follow workspace*, can pin an explicit subset.
+- **Session skills** — temporarily toggle skills for the current session; defaults to *follow workspace*, can pin an explicit subset chosen freely from the whole library (not limited to the workspace set).
 - **Cross-layer search** — full-text matching over name / description / whenToUse / body, with hit-field annotations.
 - **Unified UI** — a settings page with two tabs plus a conversation-page skill panel; all three surfaces share the same row component (whole-row click toggles, enabled highlighted, disabled greyed with an outline, presets read-only, automatic pagination).
 - **Cross-plugin integration** — a host-side `skillManager` service façade; other Cordis plugins can `inject: ['skillManager']` and call every capability.
@@ -88,7 +88,7 @@ dsh-skill-manager
 
 ```
 ┌─ Session layer  (Session)     ~/.dsh/skill-manager/sessions/<sessionId>.json
-│    subset of the workspace set; default: follow workspace
+│    follows the workspace by default; an explicit subset may freely pick any library skill
 ├─ Workspace layer (Workspace)  <cwd>/.dsh/skills/   ← the engine's only scanned workspace root
 │    dir symlink/copy → library entry; presence == enabled here
 └─ Library layer   (Library)    ~/.dsh/skill-manager/library/  ← pure skill pool, not scanned
@@ -105,7 +105,7 @@ dsh-skill-manager
 | `scanDir / findSkill / searchSkills` | directory scanning, lookup by name, cross-layer full-text search (hit fields + snippet) |
 | `importSkillDocs / importSkillZipFromBuffer` | folder batch import / zip import, per-item validation, partial failure tolerated |
 | `linkGlobalSkillToWorkspace / unlink…` | workspace enable/disable: directory symlink first, degrades to whole-dir copy (fs.cp) |
-| `readSessionConfig / setSessionSkills` | session selection read/write: explicit subset vs follow-workspace, intersection-validated against the workspace allowed set |
+| `readSessionConfig / setSessionSkills` | session selection read/write: explicit subset (free pick from the whole library) vs follow-workspace |
 | `scanPresetSkills` | reads skills physically bundled inside presets via the `agent-presets` service |
 | `normalizeParameters / registerTool` | normalizes tool parameters to standard JSON Schema (equivalent to defineTool) |
 | `isValidIdentifier / isAbsolutePath / samePath / assertRegisteredWorkspace` | security gates: identifier whitelist, platform-neutral absolute paths, case-insensitive path equality, writes limited to registered workspaces |
@@ -127,7 +127,7 @@ Whole-directory enablement: prefers `symlink(sourceDir, targetDir, 'dir')` (sing
 
 **Session selection (/session/set)**
 
-The client computes the target subset and whether it equals the whole workspace set: equal → restore follow (`explicit=false`); otherwise pin an explicit subset (`explicit=true`), which the host intersects against the workspace allowed set before persisting.
+Toggling any skill pins an explicit subset (`explicit=true`): the host accepts any library skill (the workspace enabled set only defines the *follow* default, it does not restrict an explicit pick); the "↩ back to follow" button restores `explicit=false` with an empty subset, returning the session to the workspace enabled set.
 
 **Search (/search?q=)**
 

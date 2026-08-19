@@ -6,7 +6,7 @@ DSH 的「技能」是带 YAML frontmatter 的 Markdown 文件，是代理可复
 
 - **技能库** — 列出/查看/编辑/导入/删除全部技能（目录形式：文件夹 + SKILL.md）。库只是可用技能池，不负责启用。
 - **工作区技能** — 每个项目独立维护自己的技能集合（跟随项目目录走），**唯一的启用开关**：勾选=该项目启用，未勾选=该项目完全不可见。
-- **会话技能** — 针对当前会话临时勾选，默认跟随工作区、可固定自选子集。
+- **会话技能** — 针对当前会话临时勾选，默认跟随工作区，可固定自选（**库全集自由勾选**，不限于工作区启用集）。
 - **跨层搜索** — 名称 / 描述 / 使用场景 / 正文全文匹配，带命中标注。
 - **统一界面** — 设置页双标签页 + 会话页技能面板，三处共用同一套行组件（整行点击切换、启用高亮、停用置灰+描边、预设只读、自动分页）。
 - **跨插件集成** — 宿主侧提供 `skillManager` 服务门面，其他 Cordis 插件 `inject: ['skillManager']` 即可调用全部能力。
@@ -86,7 +86,7 @@ dsh-skill-manager
 
 ```
 ┌─ 会话层  (Session)     ~/.dsh/skill-manager/sessions/<sessionId>.json
-│    工作区启用集的子集；默认「跟随工作区」
+│    默认跟随工作区；可用库中任意技能固定自选
 ├─ 工作区层 (Workspace)  <cwd>/.dsh/skills/   ← 引擎唯一扫描的工作区根
 │    symlink/copy → 技能库文件；存在 == 该工作区启用
 └─ 技能库   (Library)    ~/.dsh/skill-manager/library/  ← 纯技能池，引擎不扫
@@ -103,7 +103,7 @@ dsh-skill-manager
 | `scanDir / findSkill / searchSkills` | 目录扫描、按名定位、跨层全文搜索（命中字段 + 片段） |
 | `importSkillDocs / importSkillZipFromBuffer` | 文件夹批量导入 / zip 包导入，逐项校验、部分失败不中断 |
 | `linkGlobalSkillToWorkspace / unlink…` | 工作区启用/停用：目录级 symlink 优先，失败降级整目录复制（fs.cp） |
-| `readSessionConfig / setSessionSkills` | 会话勾选读写：显式子集与跟随工作区、对工作区允许集交集校验 |
+| `readSessionConfig / setSessionSkills` | 会话勾选读写：显式子集（库全集自由勾选）与跟随工作区 |
 | `scanPresetSkills` | 经 `agent-presets` 服务读取 preset 内物理捆绑的技能 |
 | `normalizeParameters / registerTool` | 工具参数规范化为标准 JSON Schema（等价 defineTool） |
 | `isValidIdentifier / isAbsolutePath / samePath / assertRegisteredWorkspace` | 安全门禁：标识符白名单、平台无关绝对路径、大小写不敏感路径比较、写操作仅限已登记工作区 |
@@ -125,7 +125,7 @@ Client 从会话 store 取当前 sessionId → `/view?sessionId=` → 宿主经 
 
 **会话设置（/session/set）**
 
-Client 计算目标子集与「是否等于工作区全集」：等于全集 → 恢复跟随（`explicit=false`）；否则固定显式子集（`explicit=true`），宿主对工作区允许集做交集过滤后落盘。
+Client 勾选技能即固定显式子集（`explicit=true`）：宿主允许库中任意技能入选（工作区启用集只定义「跟随」默认值，不限制显式自选）；点「回到跟随」恢复 `explicit=false`、清空子集，会话回到工作区启用集。
 
 **搜索（/search?q=）**
 

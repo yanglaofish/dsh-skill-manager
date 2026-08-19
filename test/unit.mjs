@@ -602,10 +602,13 @@ console.log('error boundaries');
   const cfg2 = await readSessionConfig('mixed');
   ok(cfg2.enabled.join(',') === 'ok-name', '会话 enabled 过滤非字符串');
 
-  // setSessionSkills intersection filter: names outside the workspace set dropped
+  // session picks are library-wide: a library skill NOT enabled in the
+  // workspace may still be session-enabled (the follow default is the
+  // workspace set, but an explicit subset is not restricted to it)
   await linkGlobalSkillToWorkspace(ws, 'ws-test-skill');
-  const intersect = await setSessionSkills('pin-session', ws, ['ws-test-skill', 'not-in-workspace']);
-  ok(intersect.ok === true && intersect.cfg.enabled.join(',') === 'ws-test-skill', '会话勾选与工作区启用集取交集');
+  const free = await setSessionSkills('pin-session', ws, ['ws-test-skill', 'my-skill', 'no-such-skill']);
+  ok(free.ok === true && free.cfg.enabled.includes('ws-test-skill') && free.cfg.enabled.includes('my-skill'), '会话可自由启用库中技能（含工作区未启用者）');
+  ok(!free.cfg.enabled.includes('no-such-skill'), '非库技能名仍被过滤');
 
   // migrateLegacySkills: idempotent after the first run, and the library
   // content is never overwritten by a legacy duplicate
