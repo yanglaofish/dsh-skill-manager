@@ -7,7 +7,7 @@ import AdmZip from 'adm-zip';
 import {
   parseSkillDoc, serializeSkillDoc, validSkillFileName, scanDir, summarize,
   editSkill, setSkillEnabled, deleteSkill, importSkillZipFromBuffer, importSkillDocs, searchSkills, skillsRoot, disabledRoot, migrateLegacySkills,
-  findSkill,
+  findSkill, normalizeSkillDirs,
   listWorkspaceSkills, linkGlobalSkillToWorkspace, unlinkGlobalSkillFromWorkspace,
   sessionSkillView, setSessionSkills, readSessionConfig,
   registerWorkspace, listWorkspaces, renameWorkspace, forgetWorkspace,
@@ -69,11 +69,15 @@ console.log('validSkillFileName');
 // --- scan / summarize ---
 console.log('scanDir / summarize');
 {
-  await writeFile(join(skillsRoot(), 'my-skill.md'), SAMPLE, 'utf8');
+  // directory form is canonical: <root>/<name>/SKILL.md
+  const d = join(skillsRoot(), 'my-skill');
+  await mkdir(d, { recursive: true });
+  await writeFile(join(d, 'SKILL.md'), SAMPLE, 'utf8');
   const list = await scanDir(skillsRoot());
   ok(list.length === 1, '扫描到 1 个技能');
   ok(list[0].name === 'my-skill', '名称正确');
   ok(list[0].enabled === true, 'active 目录标记 enabled');
+  ok(list[0].form === 'dir' && list[0].dir === d, '识别为目录形式');
   const sum = summarize(list[0]);
   ok(sum.bodyLength > 0, 'summarize 含长度');
 }
@@ -83,7 +87,7 @@ console.log('editSkill');
 {
   const r = await editSkill('my-skill', { frontmatter: { description: 'updated' }, body: '# New\n\nContent' });
   ok(r.ok === true, '编辑成功');
-  const raw = await readFile(join(skillsRoot(), 'my-skill.md'), 'utf8');
+  const raw = await readFile(join(skillsRoot(), 'my-skill', 'SKILL.md'), 'utf8');
   ok(raw.includes('description: updated'), '描述已更新');
   ok(raw.includes('# New'), '正文已替换');
   const missing = await editSkill('nope', { body: 'x' });
@@ -95,7 +99,7 @@ console.log('setSkillEnabled (deprecated)');
 {
   const off = await setSkillEnabled('my-skill', false);
   ok(off.ok === false, '全局启用/停用已移除（stub 拒绝）');
-  ok((await readdir(skillsRoot())).includes('my-skill.md'), '技能仍在库中（未被移动）');
+  ok((await readdir(skillsRoot())).includes('my-skill'), '技能仍在库中（未被移动）');
 }
 
 // --- import zip ---
@@ -112,7 +116,7 @@ Body here`));
   const buf = zip.toBuffer();
   const r = await importSkillZipFromBuffer(buf);
   ok(r.ok === true && r.name === 'imported-skill', 'zip 导入成功');
-  ok((await readdir(skillsRoot())).includes('imported-skill.md'), '导入文件落盘');
+  ok((await readdir(join(skillsRoot(), 'imported-skill'))).includes('SKILL.md'), '导入按目录形式落盘');
   const badZip = new AdmZip();
   badZip.addFile('README.md', Buffer.from('no skill here'));
   const bad = await importSkillZipFromBuffer(badZip.toBuffer());
@@ -145,8 +149,8 @@ Body two`;
     { source: 'skills/batch-skill-two/SKILL.md', content: skill2 },
   ]);
   ok(good.ok === true && good.results.length === 2 && good.results.every((r) => r.ok), '批量导入全部成功');
-  ok((await readdir(skillsRoot())).includes('batch-skill-one.md'), 'batch-skill-one 落盘');
-  ok((await readdir(skillsRoot())).includes('batch-skill-two.md'), 'batch-skill-two 落盘');
+  ok((await readdir(join(skillsRoot(), 'batch-skill-one'))).includes('SKILL.md'), 'batch-skill-one 目录落盘');
+  ok((await readdir(join(skillsRoot(), 'batch-skill-two'))).includes('SKILL.md'), 'batch-skill-two 目录落盘');
   // missing name / description / body, empty upload
   const bad = await importSkillDocs([
     { source: 'a/SKILL.md', content: '# no frontmatter' },
@@ -207,14 +211,16 @@ console.log('deleteSkill');
 {
   const r = await deleteSkill('imported-skill');
   ok(r.ok === true, '删除成功');
-  ok(!(await readdir(skillsRoot())).includes('imported-skill.md'), '文件已移除');
+  ok(!(await readdir(skillsRoot())).includes('imported-skill'), '技能目录已移除');
 }
 
 // --- workspace (L1) layer ---
 console.log('linkGlobalSkillToWorkspace / listWorkspaceSkills / unlinkGlobalSkillFromWorkspace');
 {
-  // create a global skill to link
-  await writeFile(join(skillsRoot(), 'ws-test-skill.md'), `---
+  // create a global skill to link (directory form)
+  const wsSkillLibDir = join(skillsRoot(), 'ws-test-skill');
+  await mkdir(wsSkillLibDir, { recursive: true });
+  await writeFile(join(wsSkillLibDir, 'SKILL.md'), `---
 name: ws-test-skill
 description: for workspace layer
 ---
@@ -227,7 +233,7 @@ Body`, 'utf8');
   const list = await listWorkspaceSkills(ws);
   ok(list.length === 1 && list[0].name === 'ws-test-skill', 'listWorkspaceSkills 能发现 link');
   ok(list[0].linked === true, '识别为 link');
-  const filePath = join(ws, '.dsh', 'skills', 'ws-test-skill.md');
+  const filePath = join(ws, '.dsh', 'skills', 'ws-test-skill', 'SKILL.md');
   const target = await readFile(filePath, 'utf8');
   ok(target.includes('ws-test-skill'), 'link 内容与全局一致（单副本）');
   // global edit propagates through a symlink; a degraded copy does not
@@ -339,7 +345,8 @@ console.log('registerWorkspace / listWorkspaces / renameWorkspace / forgetWorksp
 // --- legacy → library migration ---
 console.log('migrateLegacySkills');
 {
-  // simulate the old layout inside this isolated home
+  // simulate the old layout inside this isolated home (legacy single-file .md
+  // entries migrated into canonical directory form)
   const legacyRoot = join(home, 'skills');
   const legacyDisabled = join(home, 'skills-disabled');
   await mkdir(legacyRoot, { recursive: true });
@@ -349,15 +356,14 @@ console.log('migrateLegacySkills');
   const r = await migrateLegacySkills();
   ok(r.ok === true, '迁移执行成功');
   const libFiles = await readdir(skillsRoot());
-  ok(libFiles.includes('legacy-a.md') && libFiles.includes('legacy-b.md'), '旧技能移入技能库');
+  ok(libFiles.includes('legacy-a') && libFiles.includes('legacy-b'), '旧技能以目录形式移入技能库');
+  ok((await readdir(join(skillsRoot(), 'legacy-a'))).includes('SKILL.md'), 'legacy-a 目录含 SKILL.md');
   const migrated = await scanDir(skillsRoot());
-  ok(migrated.length >= 2, '库内技能可扫描');
+  ok(migrated.some((s) => s.name === 'legacy-a' && s.form === 'dir'), '库内技能可扫描为目录形式');
   // the legacy global root must be emptied — the engine still loads
   // ~/.dsh/skills for every session, so leftover copies would bypass the
   // workspace whitelist (this is why unregistered skills showed up globally)
-  const legacyLeft = (await readdir(legacyRoot)).filter((n) => n.endsWith('.md'));
-  const disabledLeft = (await readdir(legacyDisabled)).filter((n) => n.endsWith('.md'));
-  ok(legacyLeft.length === 0 && disabledLeft.length === 0, '旧根已清空（引擎不再全局加载）');
+  ok((await readdir(legacyRoot)).length === 0 && (await readdir(legacyDisabled)).length === 0, '旧根已清空（引擎不再全局加载）');
   // idempotent
   const r2 = await migrateLegacySkills();
   ok(r2.ok === true, '重复迁移幂等');
@@ -366,14 +372,20 @@ console.log('migrateLegacySkills');
 // --- engine-root ghost skills: detect + adopt into the library ---
 console.log('listUnmanagedSkills / importUnmanagedSkills');
 {
-  // engine roots: user-dsh (~/.dsh/skills) + user-agents ($DSH_AGENTS_HOME/skills)
+  // engine roots: user-dsh (~/.dsh/skills) + user-agents ($DSH_AGENTS_HOME/skills);
+  // entries are directory form (the only canonical layout)
   const userDsh = join(home, 'skills');
-  await writeFile(join(userDsh, 'ghost-a.md'), '---\nname: ghost-a\ndescription: from engine root\n---\nbody', 'utf8');
-  await writeFile(join(userDsh, 'dup-b.md'), '---\nname: batch-skill-two\ndescription: duplicate\n---\nbody', 'utf8');
+  // ghost-a: engine-root skill missing from the library
+  // dup-b: directory whose SKILL.md re-declares a library name (batch-skill-two)
+  //       — the whitelist "library wins" duplicate case
+  await mkdir(join(userDsh, 'ghost-a'), { recursive: true });
+  await writeFile(join(userDsh, 'ghost-a', 'SKILL.md'), '---\nname: ghost-a\ndescription: from engine root\n---\nbody', 'utf8');
+  await mkdir(join(userDsh, 'dup-b'), { recursive: true });
+  await writeFile(join(userDsh, 'dup-b', 'SKILL.md'), '---\nname: batch-skill-two\ndescription: duplicate\n---\nbody', 'utf8');
   process.env.DSH_AGENTS_HOME = join(home, 'agents');
   const userAgents = join(home, 'agents', 'skills');
-  await mkdir(userAgents, { recursive: true });
-  await writeFile(join(userAgents, 'ghost-c.md'), '---\nname: ghost-c\ndescription: from agents root\n---\nbody', 'utf8');
+  await mkdir(join(userAgents, 'ghost-c'), { recursive: true });
+  await writeFile(join(userAgents, 'ghost-c', 'SKILL.md'), '---\nname: ghost-c\ndescription: from agents root\n---\nbody', 'utf8');
 
   const found = await listUnmanagedSkills();
   ok(found.length === 3, '引擎根扫描到 3 个游离技能');
@@ -386,9 +398,9 @@ console.log('listUnmanagedSkills / importUnmanagedSkills');
   ok(!adopted.imported.includes('batch-skill-two'), '库 wins：同名不重复导入');
   ok(adopted.removed.length === 3, '引擎根副本全部移除');
   const libFiles = await readdir(skillsRoot());
-  ok(libFiles.includes('ghost-a.md') && libFiles.includes('ghost-c.md'), '收纳后库内可扫描');
-  ok((await readdir(userDsh)).filter((n) => n.endsWith('.md')).length === 0, 'user-dsh 根已清空');
-  ok((await readdir(userAgents)).filter((n) => n.endsWith('.md')).length === 0, 'user-agents 根已清空');
+  ok(libFiles.includes('ghost-a') && libFiles.includes('ghost-c'), '收纳后库内可扫描');
+  ok((await readdir(userDsh)).length === 0, 'user-dsh 根已清空');
+  ok((await readdir(userAgents)).length === 0, 'user-agents 根已清空');
   const again = await importUnmanagedSkills();
   ok(again.imported.length === 0 && again.removed.length === 0, '二次收纳幂等（无残留）');
   await rm(userAgents, { recursive: true, force: true });
@@ -402,12 +414,15 @@ console.log('scanSkillSources（项目级）');
   await mkdir(join(wsProj, '.dsh', 'skills'), { recursive: true });
   await mkdir(join(wsProj, '.agents', 'skills'), { recursive: true });
   await registerWorkspace(wsProj);
-  // workspace-authored local skill (missing from the library)
-  await writeFile(join(wsProj, '.dsh', 'skills', 'local-only.md'), '---\nname: local-only\ndescription: workspace authored\n---\nbody', 'utf8');
+  // workspace-authored local skill (missing from the library) — dir form
+  await mkdir(join(wsProj, '.dsh', 'skills', 'local-only'), { recursive: true });
+  await writeFile(join(wsProj, '.dsh', 'skills', 'local-only', 'SKILL.md'), '---\nname: local-only\ndescription: workspace authored\n---\nbody', 'utf8');
   // managed whitelist copy of an existing library skill (must NOT be listed)
-  await writeFile(join(wsProj, '.dsh', 'skills', 'batch-skill-one.md'), '---\nname: batch-skill-one\ndescription: dup\n---\nbody', 'utf8');
+  await mkdir(join(wsProj, '.dsh', 'skills', 'batch-skill-one'), { recursive: true });
+  await writeFile(join(wsProj, '.dsh', 'skills', 'batch-skill-one', 'SKILL.md'), '---\nname: batch-skill-one\ndescription: dup\n---\nbody', 'utf8');
   // project .agents/skills (engine project root)
-  await writeFile(join(wsProj, '.agents', 'skills', 'agent-only.md'), '---\nname: agent-only\ndescription: project agents\n---\nbody', 'utf8');
+  await mkdir(join(wsProj, '.agents', 'skills', 'agent-only'), { recursive: true });
+  await writeFile(join(wsProj, '.agents', 'skills', 'agent-only', 'SKILL.md'), '---\nname: agent-only\ndescription: project agents\n---\nbody', 'utf8');
 
   const found = await listUnmanagedSkills();
   const names = found.map((f) => f.name);
@@ -422,11 +437,26 @@ console.log('scanSkillSources（项目级）');
   const r = await importUnmanagedSkills();
   ok(r.imported.includes('local-only') && r.imported.includes('agent-only'), '两类源均导入库');
   ok(r.removed.length === 1 && r.removed[0] === 'agent-only', '仅 move 源移除（agent-only）');
-  const wsFiles = (await readdir(join(wsProj, '.dsh', 'skills'))).filter((n) => n.endsWith('.md'));
-  ok(wsFiles.includes('local-only.md') && wsFiles.includes('batch-skill-one.md'), '工作区白名单副本保留（该工作区保持启用）');
-  ok((await readdir(join(wsProj, '.agents', 'skills'))).filter((n) => n.endsWith('.md')).length === 0, '项目 agents 源已清空');
+  const wsFiles = (await readdir(join(wsProj, '.dsh', 'skills')));
+  ok(wsFiles.includes('local-only') && wsFiles.includes('batch-skill-one'), '工作区白名单副本保留（该工作区保持启用）');
+  ok((await readdir(join(wsProj, '.agents', 'skills'))).length === 0, '项目 agents 源已清空');
   const libFiles2 = await readdir(skillsRoot());
-  ok(libFiles2.includes('local-only.md') && libFiles2.includes('agent-only.md'), '项目级技能纳入库后可扫描');
+  ok(libFiles2.includes('local-only') && libFiles2.includes('agent-only'), '项目级技能纳入库后可扫描');
+}
+
+// --- normalizeSkillDirs: single-file → directory form ---
+console.log('normalizeSkillDirs');
+{
+  const extra = join(home, 'normalize-probe');
+  await mkdir(extra, { recursive: true });
+  await writeFile(join(extra, 'legacy.md'), '---\nname: legacy\ndescription: probe\n---\nbody', 'utf8');
+  const r = await normalizeSkillDirs([extra]);
+  ok(r.ok === true, '迁移执行成功');
+  ok(r.converted.some((c) => c.includes('legacy')), '转换记录含 legacy');
+  ok(!(await readdir(extra)).includes('legacy.md'), '单文件已移除');
+  ok((await readdir(join(extra, 'legacy'))).includes('SKILL.md'), '目录形式 SKILL.md 已写入');
+  const r2 = await normalizeSkillDirs([extra]);
+  ok(r2.converted.length === 0, '幂等：无单文件可转');
 }
 
 await rm(home, { recursive: true, force: true });
