@@ -318,11 +318,19 @@ console.log('setSessionSkills / sessionSkillView (follow-workspace default)');
 console.log('registerWorkspace / listWorkspaces / renameWorkspace / forgetWorkspace');
 {
   const ws = join(home, 'projects', 'demo');
+  await mkdir(ws, { recursive: true });
   const r = await registerWorkspace(ws);
   ok(r.ok === true, '登记工作区成功');
   const all = await listWorkspaces();
   ok(all.some((w) => w.cwd === ws), 'listWorkspaces 返回登记项');
   ok(all.find((w) => w.cwd === ws).exists === true, '目录存在标记正确');
+  // dead-path pruning: a registered dir that no longer exists never
+  // surfaces — the registry prunes stale entries on read
+  const ghost = join(home, 'projects', 'ghost');
+  await registerWorkspace(ghost);
+  const pruned = await listWorkspaces();
+  ok(!pruned.some((w) => w.cwd === ghost), '不存在的目录在列表读取时被自动清理');
+  ok(pruned.some((w) => w.cwd === ws), '存在的目录仍在列表');
   // rebind after "rename": old → new
   const ws2 = join(home, 'projects', 'demo-renamed');
   await mkdir(ws2, { recursive: true });
