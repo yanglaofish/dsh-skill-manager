@@ -13,6 +13,8 @@ DSH "skills" are Markdown files with YAML frontmatter — the reusable capabilit
 
 It does not change how DSH loads skills — it manages how skills are organized on disk, so the native DSH engine reads exactly the set you intend.
 
+> **v4.1 milestone**: session layer unlocked to the full library set (one-click "back to follow", implicit auto-follow removed); detail modal consolidated into a single file browser (rendered Markdown preview, root directory node, draggable split — left ≥15%, height 30–80vh); workspace picker auto-fills from the session store (including panels never opened) and dead paths are pruned on read; the panel shows the plugin version badge.
+>
 > **v4.0 milestone**: single-file compatibility fully removed (directory form only), security hardening (path-traversal / zip-bomb / cwd-escape defenses), cross-platform (Windows / Linux / macOS), front-end size pre-checks, host service façade, error-boundary tests (165 assertions).
 
 ## Install
@@ -79,7 +81,7 @@ dsh-skill-manager
 │   ├── unit.mjs              165 isolated assertions (temporary DSH_HOME, error boundaries)
 │   └── seed-sample.mjs       sample-skill writer (dev verification)
 ├── README.md / README-en.md
-└── package.json              bundle manifest: exports + dsh.client (v4.0.0)
+└── package.json              bundle manifest: exports + dsh.client (v4.1.0)
 ```
 
 **Core design principle**: a skill's state has a single source of truth — the on-disk directory layout. Skills live in the library (`~/.dsh/skill-manager/library/`, not scanned by the engine), workspace enablement is the whitelist in `<cwd>/.dsh/skills` (the only engine-visible source), session selection sits in a dedicated JSON; every UI and tool reads the same disk facts, so there is never a fork between in-memory state and disk state.
