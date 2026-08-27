@@ -691,6 +691,14 @@ console.log('engineLoadState / collectEngineLoaded');
   // null engineLoaded = can't judge (no badge, don't alarm) → unknown
   ok(engineLoadState({ name: 'ghost', layer: 'workspace', sessionEnabled: true }, undefined) === 'unknown', '引擎查询不可用 → unknown（不误报）');
   ok(engineLoadState({ name: 'ghost', layer: 'workspace', sessionEnabled: true }, null) === 'unknown', '引擎查询失败 → unknown');
+  // EMPTY list must NOT be treated as "nothing loaded": the host-side read may
+  // not see scope-layer providers even though the engine loads skills (the
+  // code-review-skill regression). Empty → unknown, never missing.
+  ok(engineLoadState({ name: 'ghost', layer: 'workspace', sessionEnabled: true }, []) === 'unknown', '空引擎列表 → unknown（不误报 missing）');
+  // v4.1 session semantics: a pure session pick (view layer, not in the
+  // workspace whitelist) is never judged against the engine catalog
+  ok(engineLoadState({ name: 'picked', layer: 'global', origin: 'user', sessionEnabled: true }, []) === 'off', '纯会话勾选（视图层）不判引擎 → off');
+  ok(engineLoadState({ name: 'picked', layer: 'global', origin: 'user', sessionEnabled: true }, loaded) === 'off', '纯会话勾选即使引擎有同名也 → off');
   // collectEngineLoaded: maps native summaries to the compact projection
   const fakeSvc = { list: async ({ cwd }) => cwd === 'C:/proj'
     ? [{ name: 'a', source: 'project-dsh', provider: 'filesystem' }]
