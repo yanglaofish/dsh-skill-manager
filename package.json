@@ -1,6 +1,6 @@
 {
   "name": "dsh-skill-manager",
-  "version": "4.1.0",
+  "version": "4.2.0",
   "description": "Skill lifecycle manager: library / workspace / session three-layer skill management for DSH",
   "private": true,
   "type": "module",

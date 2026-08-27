@@ -14,6 +14,7 @@ import {
   listUnmanagedSkills, importUnmanagedSkills, scanSkillSources, listSkillFiles,
   readSkillFile, writeSkillFile,
   isAbsolutePath, samePath, errMsg, bareSkillName,
+  engineLoadState, collectEngineLoaded,
 } from '../lib/index.js';
 
 let pass = 0, fail = 0;
@@ -670,6 +671,35 @@ console.log('error boundaries');
   ok(dup.alreadyDone === true, '迁移幂等（第二次运行 no-op，不重复处理）');
   const dupEntry = await findSkill('my-skill');
   ok(dupEntry && !/dup body/.test(dupEntry.body), '库同名优先：库内容不被旧副本覆盖');
+}
+
+// --- engine-visibility (v4.2): ctx.skills.list as "what the engine loads" ---
+console.log('engineLoadState / collectEngineLoaded');
+{
+  // preset rows are always ok
+  ok(engineLoadState({ name: 'p1', layer: 'preset', origin: 'preset' }, []) === 'ok', 'preset 行恒为 ok');
+  ok(engineLoadState({ name: 'p1', layer: 'global', origin: 'preset' }, []) === 'ok', 'origin=preset 行恒为 ok');
+  // not enabled → off (no badge)
+  ok(engineLoadState({ name: 'x', layer: 'global', sessionEnabled: false }, []) === 'off', '未启用 → off');
+  // enabled + engine loads from project-dsh → ok
+  const loaded = [{ name: 'a', source: 'project-dsh' }, { name: 'b', source: 'preset' }];
+  ok(engineLoadState({ name: 'a', layer: 'workspace', sessionEnabled: true }, loaded) === 'ok', '启用且引擎以 project-dsh 加载 → ok');
+  // enabled + engine loads same name from another layer → shadowed
+  ok(engineLoadState({ name: 'b', layer: 'workspace', sessionEnabled: true }, loaded) === 'shadowed', '同名被其他来源（preset）覆盖 → shadowed');
+  // enabled + engine has no such name → missing
+  ok(engineLoadState({ name: 'ghost', layer: 'workspace', sessionEnabled: true }, loaded) === 'missing', '启用但引擎未加载 → missing');
+  // null engineLoaded = can't judge (no badge, don't alarm) → unknown
+  ok(engineLoadState({ name: 'ghost', layer: 'workspace', sessionEnabled: true }, undefined) === 'unknown', '引擎查询不可用 → unknown（不误报）');
+  ok(engineLoadState({ name: 'ghost', layer: 'workspace', sessionEnabled: true }, null) === 'unknown', '引擎查询失败 → unknown');
+  // collectEngineLoaded: maps native summaries to the compact projection
+  const fakeSvc = { list: async ({ cwd }) => cwd === 'C:/proj'
+    ? [{ name: 'a', source: 'project-dsh', provider: 'filesystem' }]
+    : (() => { throw new Error('boom'); })() };
+  const got = await collectEngineLoaded(fakeSvc, 'C:/proj');
+  ok(Array.isArray(got) && got[0].name === 'a' && got[0].source === 'project-dsh' && got[0].provider === 'filesystem', 'collectEngineLoaded 投影 name/source/provider');
+  ok(await collectEngineLoaded(fakeSvc, 'C:/boom') === undefined, '引擎查询异常 → undefined');
+  ok(await collectEngineLoaded(undefined, 'C:/proj') === undefined, '无 skills 服务 → undefined');
+  ok(await collectEngineLoaded(fakeSvc, '') === undefined, '无 cwd → undefined');
 }
 
 await rm(home, { recursive: true, force: true });
