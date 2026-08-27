@@ -82,20 +82,20 @@ dsh-skill-manager
 └── package.json              bundle 清单：exports + dsh.client 声明（v4.1.0）
 ```
 
-**核心设计原则**：技能的状态只有单一事实源 —— 磁盘上的目录结构。技能存放在技能库（`~/.dsh/skill-manager/library/`，引擎不扫描），工作区启用是 `<cwd>/.dsh/skills` 里的白名单（引擎唯一可见源），会话勾选在独立 JSON；所有界面与工具都读取同一份磁盘事实，不存在内存态与磁盘态的分叉。
+**核心设计原则**：技能的状态只有单一事实源 —— 磁盘上的目录结构。技能存放在技能库（`~/.dsh/skill-manager/library/`，引擎不扫描），工作区启用是 `<项目根>/.dsh/skills` 里的白名单（引擎唯一可见源），会话勾选在独立 JSON；所有界面与工具都读取同一份磁盘事实，不存在内存态与磁盘态的分叉。项目根与 dsh 引擎一致 —— 从会话 cwd 向上找最近的 `.git` 所在目录（`dsh-skill-filesystem.findProjectRoot`），找不到就回落为 cwd：子目录工作区的启用会正确落在仓库根，旧版建在 `<cwd>/.dsh/skills` 的链接会自动合并迁移过去。
 
 ### 三层模型
 
 ```
 ┌─ 会话层  (Session)     ~/.dsh/skill-manager/sessions/<sessionId>.json
 │    默认跟随工作区；可用库中任意技能固定自选
-├─ 工作区层 (Workspace)  <cwd>/.dsh/skills/   ← 引擎唯一扫描的工作区根
+├─ 工作区层 (Workspace)  <项目根>/.dsh/skills/  ← 引擎唯一扫描的工作区根
 │    symlink/copy → 技能库文件；存在 == 该工作区启用
 └─ 技能库   (Library)    ~/.dsh/skill-manager/library/  ← 纯技能池，引擎不扫
                          所有用户技能平铺于此；不做启用/停用
 ```
 
-**关键语义**：技能库不是「全局启用」——库中的技能对任何工作区都不可见，直到某个工作区把它勾选进 `<cwd>/.dsh/skills`（白名单）。这避免了旧模型「全局启用了但项目不想开」的冲突：启用与否完全由每个项目自己决定。dsh 引擎只扫描工作区的 `.dsh/skills`（project-dsh 根）与 preset，技能库位于 `~/.dsh/skill-manager/` 下不被引擎发现，天然实现白名单。
+**关键语义**：技能库不是「全局启用」——库中的技能对任何工作区都不可见，直到某个工作区把它勾选进 `<项目根>/.dsh/skills`（白名单）。这避免了旧模型「全局启用了但项目不想开」的冲突：启用与否完全由每个项目自己决定。dsh 引擎只扫描项目根的 `.dsh/skills`（project-dsh 根）与 preset，技能库位于 `~/.dsh/skill-manager/` 下不被引擎发现，天然实现白名单。
 
 ### 关键模块
 

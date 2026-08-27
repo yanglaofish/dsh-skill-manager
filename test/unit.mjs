@@ -354,6 +354,42 @@ console.log('registerWorkspace / listWorkspaces / renameWorkspace / forgetWorksp
   ok((await import('node:fs/promises')).stat(ws).then(() => true).catch(() => false), '工作区目录未被删除');
 }
 
+// --- project-root alignment (engine scans <nearest .git ancestor>/.dsh/skills) ---
+console.log('projectRoot 对齐（git 仓库子目录工作区）');
+{
+  const fsp = await import('node:fs/promises');
+  const repo = join(home, 'repos', 'my-project');
+  const sub = join(repo, 'packages', 'app');
+  await mkdir(join(repo, '.git'), { recursive: true });
+  await mkdir(sub, { recursive: true });
+  await registerWorkspace(sub);
+  // a library skill, enabled from the SUBDIRECTORY cwd
+  await mkdir(join(skillsRoot(), 'align-skill'), { recursive: true });
+  await writeFile(join(skillsRoot(), 'align-skill', 'SKILL.md'), '---\nname: align-skill\ndescription: x\n---\nbody', 'utf8');
+  const lr = await linkGlobalSkillToWorkspace(sub, 'align-skill');
+  ok(lr.ok === true, '子目录 cwd 启用成功');
+  const atRoot = await fsp.stat(join(repo, '.dsh', 'skills', 'align-skill')).then(() => true).catch(() => false);
+  ok(atRoot, '链接落在仓库根 .dsh/skills（引擎实际扫描处）');
+  const atSub = await fsp.stat(join(sub, '.dsh', 'skills')).then(() => true).catch(() => false);
+  ok(!atSub, '未落在子目录自身 .dsh/skills');
+  // legacy migration: pre-alignment links under <cwd>/.dsh/skills move to the root
+  const sub2 = join(repo, 'packages', 'legacy-app');
+  await mkdir(sub2, { recursive: true });
+  await registerWorkspace(sub2);
+  await mkdir(join(sub2, '.dsh', 'skills', 'old-skill'), { recursive: true });
+  await writeFile(join(sub2, '.dsh', 'skills', 'old-skill', 'SKILL.md'), '---\nname: old-skill\ndescription: x\n---\nbody', 'utf8');
+  await listWorkspaceSkills(sub2); // triggers lazy migration
+  const moved = await fsp.stat(join(repo, '.dsh', 'skills', 'old-skill')).then(() => true).catch(() => false);
+  ok(moved, '旧位 <cwd>/.dsh/skills 惰性迁移到仓库根 .dsh/skills');
+  const legacyGone = await fsp.stat(join(sub2, '.dsh', 'skills')).then(() => false).catch(() => true);
+  ok(legacyGone, '迁移后旧位目录已移除');
+  // cleanup: forget both workspaces and remove the repo so later unmanaged
+  // scans in this suite are not polluted by these project roots
+  await forgetWorkspace(sub);
+  await forgetWorkspace(sub2);
+  await fsp.rm(repo, { recursive: true, force: true });
+}
+
 // --- legacy → library migration ---
 console.log('migrateLegacySkills');
 {
