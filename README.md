@@ -2,6 +2,14 @@
 
 一个 DeepSeek Harness（DSH）插件：为 DSH 代理的**技能**提供完整的管理平面——统一查看、编辑、导入、管理，并按照「技能库 / 工作区 / 会话」三层模型精细控制每个技能在何时何地生效。**技能库只存技能，启用跟着项目走**：技能放进库中不会自动生效，只有某个工作区勾选启用后，该工作区（及其会话）才看得到它。
 
+## 界面预览
+
+| 设置面板 · 三层模型 | 工作区启用白名单 |
+| --- | --- |
+| ![设置面板](assets/settings-panel.png) | ![工作区启用](assets/workspace-enable.png) |
+| 技能文件浏览/编辑 | 会话级勾选 |
+| ![技能编辑](assets/skill-editor.png) | ![会话级控制](assets/session-picks.png) |
+
 DSH 的「技能」是带 YAML frontmatter 的 Markdown 文件，是代理可复用的能力包。技能一多就会散落，难以统一管理。dsh-skill-manager 把这一切收拢成一个管理平面：
 
 - **技能库** — 列出/查看/编辑/导入/删除全部技能（目录形式：文件夹 + SKILL.md）。库只是可用技能池，不负责启用。
@@ -12,14 +20,6 @@ DSH 的「技能」是带 YAML frontmatter 的 Markdown 文件，是代理可复
 - **跨插件集成** — 宿主侧提供 `skillManager` 服务门面，其他 Cordis 插件 `inject: ['skillManager']` 即可调用全部能力。
 
 它不改变 DSH 的技能加载机制——它管理技能在磁盘上的组织方式，让 DSH 原生引擎读到的正是你想要的集合。
-
-## 界面预览
-
-| 设置面板 · 三层模型 | 工作区启用白名单 |
-| --- | --- |
-| ![设置面板](assets/settings-panel.png) | ![工作区启用](assets/workspace-enable.png) |
-| 技能文件浏览/编辑 | 会话级勾选 |
-| ![技能编辑](assets/skill-editor.png) | ![会话级控制](assets/session-picks.png) |
 
 > **v4.3 里程碑**：浏览器信任围栏——面板 API（`/skill-manager/api/*`）接入与 dsh 官方 `/api` 一致的 confused-deputy 防线（`isTrustedPanelRequest`）：Host 必须为 loopback（localhost / 127/8 / [::1]，防 DNS rebinding）、`sec-fetch-site: cross-site` 一律 403（防 CSRF）、带 Origin 时须同源；测试 203 条。此围栏镜像 `dsh-client-connection` 的 `isTrustedApiRequest`（官方 RPC 通道内置，插件自建路由需自行复制），纯头判定、无额外依赖。
 >
