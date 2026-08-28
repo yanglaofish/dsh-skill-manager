@@ -13,6 +13,8 @@ DSH 的「技能」是带 YAML frontmatter 的 Markdown 文件，是代理可复
 
 它不改变 DSH 的技能加载机制——它管理技能在磁盘上的组织方式，让 DSH 原生引擎读到的正是你想要的集合。
 
+> **v4.3 里程碑**：浏览器信任围栏——面板 API（`/skill-manager/api/*`）接入与 dsh 官方 `/api` 一致的 confused-deputy 防线（`isTrustedPanelRequest`）：Host 必须为 loopback（localhost / 127/8 / [::1]，防 DNS rebinding）、`sec-fetch-site: cross-site` 一律 403（防 CSRF）、带 Origin 时须同源；测试 203 条。此围栏镜像 `dsh-client-connection` 的 `isTrustedApiRequest`（官方 RPC 通道内置，插件自建路由需自行复制），纯头判定、无额外依赖。
+>
 > **v4.2 里程碑**：引擎视角校验——`/view` 经原生 `ctx.skills.list({ cwd })` 查询引擎实际加载的技能集，工作区/会话面板对「工作区白名单已启用但引擎未加载（missing）」「同名被其他来源覆盖（shadowed）」的技能标红色角标（悬停显示原因）；配套 host 纯函数 `engineLoadState`/`collectEngineLoaded`；测试 190 条。原生 skills 接口仅作只读校验，磁盘白名单主链路保持不变。
 >
 > **v4.2.1 语义修正**（跟随审核修复）：① 引擎查询返回**空列表**一律按 `unknown` 处理（不亮角标）——宿主侧 `list()` 可能看不到挂在 scope 层的 provider，引擎实际仍加载着技能，空 ≠ 未加载，宁无声不误报；② `missing`/`shadowed` 只对**工作区白名单启用**（引擎契约该加载的磁盘事实）判定，纯会话勾选（视图层，v4.1 语义）不再被标「未加载」。

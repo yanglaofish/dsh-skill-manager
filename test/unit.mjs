@@ -15,6 +15,7 @@ import {
   readSkillFile, writeSkillFile,
   isAbsolutePath, samePath, errMsg, bareSkillName,
   engineLoadState, collectEngineLoaded,
+  isTrustedPanelRequest,
 } from '../lib/index.js';
 
 let pass = 0, fail = 0;
@@ -708,6 +709,28 @@ console.log('engineLoadState / collectEngineLoaded');
   ok(await collectEngineLoaded(fakeSvc, 'C:/boom') === undefined, '引擎查询异常 → undefined');
   ok(await collectEngineLoaded(undefined, 'C:/proj') === undefined, '无 skills 服务 → undefined');
   ok(await collectEngineLoaded(fakeSvc, '') === undefined, '无 cwd → undefined');
+}
+
+// --- browser-trust fence (v4.3): mirrors dsh's /api isTrustedApiRequest ---
+console.log('isTrustedPanelRequest');
+{
+  // loopback Hosts pass regardless of browser markers
+  ok(isTrustedPanelRequest({ host: '127.0.0.1:3080' }) === true, 'loopback Host + no markers → 通过');
+  ok(isTrustedPanelRequest({ host: 'localhost:3080' }) === true, 'localhost Host → 通过');
+  ok(isTrustedPanelRequest({ host: '[::1]:3080' }) === true, 'IPv6 loopback → 通过');
+  ok(isTrustedPanelRequest({ host: '127.5.9.1' }) === true, '127/8 任意地址 → 通过');
+  // non-loopback Host → refused (DNS rebinding surface)
+  ok(isTrustedPanelRequest({ host: 'evil.example.com' }) === false, '非 loopback Host（DNS rebinding）→ 拒绝');
+  ok(isTrustedPanelRequest({ host: '192.168.1.10:3080' }) === false, '局域网 IP → 拒绝');
+  ok(isTrustedPanelRequest({}) === false, '无 Host → 拒绝');
+  ok(isTrustedPanelRequest({ host: '' }) === false, '空 Host → 拒绝');
+  // cross-site browser marker → refused (CSRF)
+  ok(isTrustedPanelRequest({ host: '127.0.0.1:3080', 'sec-fetch-site': 'cross-site' }) === false, 'sec-fetch-site=cross-site → 拒绝');
+  ok(isTrustedPanelRequest({ host: '127.0.0.1:3080', 'sec-fetch-site': 'same-origin' }) === true, 'sec-fetch-site=same-origin → 通过');
+  // Origin present → must be same-host
+  ok(isTrustedPanelRequest({ host: '127.0.0.1:3080', origin: 'http://127.0.0.1:3080' }) === true, '同源 Origin → 通过');
+  ok(isTrustedPanelRequest({ host: '127.0.0.1:3080', origin: 'http://evil.example.com' }) === false, '异源 Origin → 拒绝');
+  ok(isTrustedPanelRequest({ host: '127.0.0.1:3080', origin: 'not-a-url' }) === false, '畸形 Origin → 拒绝');
 }
 
 await rm(home, { recursive: true, force: true });
