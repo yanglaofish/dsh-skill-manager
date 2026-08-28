@@ -4,11 +4,21 @@
 
 ## 界面预览
 
-| 设置面板 · 三层模型 | 工作区启用白名单 |
-| --- | --- |
-| ![设置面板](assets/settings-panel.png) | ![工作区启用](assets/workspace-enable.png) |
-| 技能文件浏览/编辑 | 会话级勾选 |
-| ![技能编辑](assets/skill-editor.png) | ![会话级控制](assets/session-picks.png) |
+**设置面板 · 三层模型**
+
+![设置面板](assets/settings-panel.png)
+
+**工作区启用白名单**
+
+![工作区启用](assets/workspace-enable.png)
+
+**技能文件浏览/编辑**
+
+![技能编辑](assets/skill-editor.png)
+
+**会话级勾选**
+
+![会话级控制](assets/session-picks.png)
 
 DSH 的「技能」是带 YAML frontmatter 的 Markdown 文件，是代理可复用的能力包。技能一多就会散落，难以统一管理。dsh-skill-manager 把这一切收拢成一个管理平面：
 
