@@ -494,6 +494,32 @@ console.log('scanSkillSources（项目级）');
   ok(libFiles2.includes('local-only') && libFiles2.includes('agent-only'), '项目级技能纳入库后可扫描');
 }
 
+// --- regression: delete purges workspace-whitelist leftovers ---
+// Deleting a library skill must also remove same-named workspace .dsh/skills
+// entries (and other engine/project roots). Otherwise listUnmanagedSkills()
+// re-discovers the "deleted" skill as unmanaged and the user can re-import it.
+console.log('deleteSkill purges workspace-whitelist leftovers');
+{
+  const ghostLib = join(skillsRoot(), 'del-ghost');
+  await mkdir(ghostLib, { recursive: true });
+  await writeFile(join(ghostLib, 'SKILL.md'), '---\nname: del-ghost\ndescription: delete purge probe\n---\nbody', 'utf8');
+  const wsDel = join(home, 'projects', 'proj-del');
+  await mkdir(wsDel, { recursive: true });
+  await registerWorkspace(wsDel);
+  const link = await linkGlobalSkillToWorkspace(wsDel, 'del-ghost');
+  ok(link.ok === true, '工作区先行启用 del-ghost（link 或 copy）');
+  const wsDir = join(wsDel, '.dsh', 'skills');
+  ok((await readdir(wsDir)).includes('del-ghost'), '工作区白名单存在 del-ghost 副本');
+
+  const r = await deleteSkill('del-ghost');
+  ok(r.ok === true, '删除 del-ghost 成功');
+  ok(!(await readdir(skillsRoot())).includes('del-ghost'), '库内技能目录已移除');
+  ok(!(await readdir(wsDir)).includes('del-ghost'), '工作区白名单残留同步清除');
+
+  const after = await listUnmanagedSkills();
+  ok(!after.some((s) => s.name === 'del-ghost'), '删除后不再被列为游离技能（不能重新导入）');
+}
+
 // --- normalizeSkillDirs: single-file → directory form ---
 console.log('normalizeSkillDirs');
 {
