@@ -1,4 +1,4 @@
 # dsh-skill-manager bundle patch: load the host half and expose its client half.
 - insert:
     - id: skill-manager
-      name: dsh-skill-manager
+      name: '@yanglaofish/dsh-skill-manager'
