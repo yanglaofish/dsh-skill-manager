@@ -19,6 +19,16 @@ It does not change how DSH loads skills — it manages how skills are organized 
 
 ## Install
 
+Choose either way (the package is published to npm — prebuilt, no build approval needed):
+
+**Option A: from npm (recommended)**
+
+```sh
+dsh plugin --profile web add @yanglaofish/dsh-skill-manager
+```
+
+**Option B: from the GitHub source**
+
 ```sh
 dsh plugin --profile web add github:yanglaofish/dsh-skill-manager
 ```
@@ -159,6 +169,7 @@ node test/unit.mjs
 
 - All file operations are module-level functions testable without a live runtime; `apply()` only works during assembly.
 - **GitHub-install mode**: after changing code, `git push`, then `pnpm update dsh-skill-manager` and restart `dsh web`.
+- **npm-install mode**: after changing code, `npm version patch` (or a manual bump) → `npm publish`, then run `pnpm add @yanglaofish/dsh-skill-manager@<latest>` inside the profile and restart `dsh web`.
 - **Local-dev mode** (changes take effect on restart): `dsh plugin --profile web add .` or a manual link dependency.
 
 ## License

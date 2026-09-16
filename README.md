@@ -43,6 +43,16 @@ DSH 的「技能」是带 YAML frontmatter 的 Markdown 文件，是代理可复
 
 ## 安装
 
+两种方式任选其一（npm 包已发布，拉取即用、免构建授权）：
+
+**方式 A：npm 安装（推荐）**
+
+```sh
+dsh plugin --profile web add @yanglaofish/dsh-skill-manager
+```
+
+**方式 B：GitHub 源安装**
+
 ```sh
 dsh plugin --profile web add github:yanglaofish/dsh-skill-manager
 ```
@@ -181,6 +191,7 @@ node test/unit.mjs
 
 - 所有文件操作均为模块级函数，无需真实运行环境即可单测；`apply()` 只在装配阶段工作。
 - **GitHub 安装模式下**：改代码需 `git push` 后执行 `pnpm update dsh-skill-manager` 再重启 `dsh web` 生效。
+- **npm 安装模式下**：改代码需 `npm version patch`（或手动 bump）→ `npm publish` 后，profile 内执行 `pnpm add @yanglaofish/dsh-skill-manager@最新版` 再重启 `dsh web` 生效。
 - **本地开发模式**（改代码重启即生效）：`dsh plugin --profile web add .` 或手动 link 依赖。
 
 ## 许可

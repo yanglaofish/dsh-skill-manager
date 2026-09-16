@@ -1,10 +1,24 @@
 {
-  "name": "dsh-skill-manager",
-  "version": "4.3.0",
+  "name": "@yanglaofish/dsh-skill-manager",
+  "version": "4.3.1",
   "description": "Skill lifecycle manager: library / workspace / session three-layer skill management for DSH",
-  "private": true,
   "type": "module",
   "main": "lib/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yanglaofish/dsh-skill-manager.git"
+  },
+  "homepage": "https://github.com/yanglaofish/dsh-skill-manager",
+  "bugs": {
+    "url": "https://github.com/yanglaofish/dsh-skill-manager/issues"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "README-en.md",
+    "screenshots.json"
+  ],
   "dependencies": {
     "adm-zip": "^0.5.16",
     "yaml": "^2.9.0"
