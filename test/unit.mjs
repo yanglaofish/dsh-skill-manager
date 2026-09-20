@@ -157,15 +157,37 @@ Body two`;
   ok((await readdir(join(skillsRoot(), 'batch-skill-two'))).includes('SKILL.md'), 'batch-skill-two 目录落盘');
   // missing name / description / body, empty upload
   const bad = await importSkillDocs([
-    { source: 'a/SKILL.md', content: '# no frontmatter' },
-    { source: 'b/SKILL.md', content: '---\nname: desc-missing\n---\nbody' },
-    { source: 'c/SKILL.md', content: '---\nname: body-missing\ndescription: x\n---\n' },
-    { source: 'd/README.md', content: 'not a skill at all' },
+    { source: 'n1', content: '---\ndescription: x\n---\nbody' },
+    { source: 'n2', content: '---\nname: Bad Name\ndescription: x\n---\nbody' },
+    { source: 'n3', content: '---\nname: no-desc\n---\nbody' },
+    { source: 'n4', content: '---\nname: no-body\n---\n' },
   ]);
-  ok(bad.ok === true && bad.results.length === 4 && bad.results.every((r) => !r.ok), '非法项全部被拒');
-  ok(bad.results[0].error.includes('name'), '缺 name 原因明确');
-  ok(bad.results[1].error.includes('description'), '缺 description 原因明确');
-  ok(bad.results[2].error.includes('正文为空'), '空正文原因明确');
+  ok(bad.results.length === 4 && bad.results.every((r) => r.ok === false), '缺 name/非法 name/缺 description/缺 body 全部拒绝');
+  // directory form: SKILL.md + sibling files restored together
+  const dirForm = await importSkillDocs([{
+    source: 'some/path/dir-skill',
+    files: [
+      { path: 'SKILL.md', b64: Buffer.from('---\nname: dir-full\ndescription: full dir skill\n---\n# Dir\n\nBody', 'utf8').toString('base64') },
+      { path: 'scripts/gen.py', b64: Buffer.from('print("hi")', 'utf8').toString('base64') },
+      { path: 'assets/logo.bin', b64: Buffer.from([0, 1, 2, 3]).toString('base64') },
+      { path: '../escape.md', b64: Buffer.from('nope', 'utf8').toString('base64') },
+      { path: '/abs.md', b64: Buffer.from('nope', 'utf8').toString('base64') },
+    ],
+  }]);
+  ok(dirForm.ok === true && dirForm.results[0]?.ok === true, '目录形式导入成功');
+  ok(dirForm.results[0]?.restored === 2, '附属文件还原 2 个（escape/abs 被安全忽略）');
+  ok((await readdir(join(skillsRoot(), 'dir-full', 'scripts'))).includes('gen.py'), 'scripts/gen.py 还原');
+  ok((await readdir(join(skillsRoot(), 'dir-full', 'assets'))).includes('logo.bin'), 'assets/logo.bin 二进制还原');
+  const dirRaw = await readFile(join(skillsRoot(), 'dir-full', 'assets', 'logo.bin'));
+  ok(Buffer.from(dirRaw).equals(Buffer.from([0, 1, 2, 3])), '二进制内容逐字节一致');
+  ok(!(await readdir(join(skillsRoot(), '..'))).includes('escape.md'), '路径穿越未逃逸出技能库');
+  ok(!(await readdir(join(skillsRoot(), 'dir-full'))).includes('abs.md'), '绝对路径条目被忽略');
+  // directory form: missing SKILL.md → rejected
+  const dirNoMd = await importSkillDocs([{ source: 'x', files: [{ path: 'readme.md', b64: Buffer.from('x').toString('base64') }] }]);
+  ok(dirNoMd.results[0]?.ok === false, '目录形式缺 SKILL.md 拒绝');
+  // directory form: empty dir upload array
+  const dirEmpty = await importSkillDocs([{ source: 'x', files: [] }]);
+  ok(dirEmpty.results[0]?.ok === false && /缺少 SKILL\.md/.test(dirEmpty.results[0].error), '空 files 数组按目录形式校验缺 SKILL.md');
   const none = await importSkillDocs([]);
   ok(none.ok === false, '空数组拒绝');
 }
