@@ -188,6 +188,29 @@ Body two`;
   // directory form: empty dir upload array
   const dirEmpty = await importSkillDocs([{ source: 'x', files: [] }]);
   ok(dirEmpty.results[0]?.ok === false && /缺少 SKILL\.md/.test(dirEmpty.results[0].error), '空 files 数组按目录形式校验缺 SKILL.md');
+  // mirror semantics: re-import a directory WITHOUT a previously imported
+  // sibling file → the stale file is removed, not left behind
+  const mirror = await importSkillDocs([{
+    source: 'mirror-skill/v1',
+    files: [
+      { path: 'SKILL.md', b64: Buffer.from('---\nname: mirror-skill\ndescription: mirror test\n---\n# Mirror\n\nBody v1', 'utf8').toString('base64') },
+      { path: 'scripts/old.py', b64: Buffer.from('v1', 'utf8').toString('base64') },
+      { path: 'assets/keep.bin', b64: Buffer.from('keep', 'utf8').toString('base64') },
+    ],
+  }]);
+  ok(mirror.results[0]?.ok === true, '首次镜像导入成功');
+  const mirror2 = await importSkillDocs([{
+    source: 'mirror-skill/v2',
+    files: [
+      { path: 'SKILL.md', b64: Buffer.from('---\nname: mirror-skill\ndescription: mirror test\n---\n# Mirror\n\nBody v2', 'utf8').toString('base64') },
+      { path: 'scripts/new.py', b64: Buffer.from('v2', 'utf8').toString('base64') },
+    ],
+  }]);
+  ok(mirror2.results[0]?.ok === true, '二次镜像导入成功');
+  const mirrorFiles = await readdir(join(skillsRoot(), 'mirror-skill', 'scripts'));
+  ok(mirrorFiles.includes('new.py') && !mirrorFiles.includes('old.py'), '旧文件 old.py 已被清除（镜像语义）');
+  const mirrorRoot = await readdir(join(skillsRoot(), 'mirror-skill'));
+  ok(!mirrorRoot.includes('assets'), '被移除的 assets/ 目录整枝清除');
   const none = await importSkillDocs([]);
   ok(none.ok === false, '空数组拒绝');
 }
