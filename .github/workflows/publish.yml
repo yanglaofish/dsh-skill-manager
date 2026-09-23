@@ -38,8 +38,12 @@ jobs:
         with:
           node-version: 24
 
+      # Unit tests need adm-zip + yaml, so install dependencies. npm install
+      # (not `npm ci`): this repo intentionally does NOT commit a lockfile
+      # (package-lock.json is gitignored), and `npm ci` would hard-fail when
+      # the lockfile is absent from the checkout.
       - name: Install dependencies (unit tests need adm-zip + yaml)
-        run: npm ci --no-audit --no-fund
+        run: npm install --no-audit --no-fund
 
       - name: Configure npm auth (NPM if set, else OIDC)
         shell: bash
