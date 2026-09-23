@@ -1,0 +1,81 @@
+# Publish @yanglaofish/dsh-skill-manager to npmjs via GitHub Actions.
+#
+# Local publishes work, but CI publishing keeps releases reproducible and
+# side-steps any local network/SWG interference. Modeled on the proven
+# dsh-proxy-pro publish workflow (tag-triggered, NPM secret or OIDC auth,
+# npm publish, then an active Taobao-mirror sync + poll).
+#
+# Release flow (human):
+#   npm version 4.3.6 --no-git-tag-version
+#   git commit -am "release: 4.3.6"
+#   git tag v4.3.6 && git push origin master --tags
+#   -> this workflow runs on the v* tag.
+#
+# Auth options (mirror dsh-proxy-pro):
+#   A) repo secret `NPM` (arbitrary name; workflow reads secrets.NPM):
+#      npmjs -> Access Tokens -> Granular, Read+Publish (this package only)
+#      -> add as repo secret named NPM.
+#   B) OIDC trusted publishing: npmjs package settings -> "Trusted publishers"
+#      -> connect yanglaofish/dsh-skill-manager (needs id-token permission).
+name: Publish npm
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC trusted publishing (option B) / provenance
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies (unit tests need adm-zip + yaml)
+        run: npm ci --no-audit --no-fund
+
+      - name: Configure npm auth (NPM if set, else OIDC)
+        shell: bash
+        env:
+          NPM_TOKEN_FROM_SECRET: ${{ secrets.NPM }}
+        run: |
+          if [ -n "$NPM_TOKEN_FROM_SECRET" ]; then
+            echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN_FROM_SECRET}" > "$HOME/.npmrc"
+            echo "auth: NPM secret"
+          else
+            echo "auth: OIDC trusted publishing (npmjs Trusted Publishers must be configured)"
+          fi
+
+      - name: Syntax check
+        run: node --check lib/index.js && node --check lib/client.js
+
+      - name: Unit tests
+        run: node test/unit.mjs
+
+      - name: Publish to npmjs
+        run: npm publish --registry=https://registry.npmjs.org --access=public
+
+      # Active Taobao-mirror sync + poll dist-tags.latest, so npmmirror
+      # catches up without waiting for its lazy sync (same as dsh-proxy-pro).
+      - name: Taobao mirror active sync + poll dist-tags.latest
+        shell: bash
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          echo "target=$VER"
+          curl -sS -X PUT "https://registry.npmmirror.com/-/sync/@yanglaofish%2Fdsh-skill-manager" -o /tmp/sync.json -w 'sync trigger http=%{http_code}\n' || true
+          for i in $(seq 1 30); do
+            LATEST=$(curl -sS "https://registry.npmmirror.com/@yanglaofish%2Fdsh-skill-manager" \
+              | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{console.log(JSON.parse(d)['dist-tags']?.latest||'')}catch{console.log('')}})" 2>/dev/null || echo '')
+            echo "poll $i: tb latest=$LATEST"
+            [ "$LATEST" = "$VER" ] && { echo "SYNCED: $LATEST"; exit 0; }
+            sleep 10
+          done
+          echo "WARN: tb not synced within 5min - staged publish may await 2FA approval at npmjs.com; approve, then re-run this job"
+          exit 1
