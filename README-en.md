@@ -25,12 +25,12 @@ It does not change how DSH loads skills — it manages how skills are organized 
 
 | Your dsh | Install | Command |
 |---|---|---|
-| `0.2.x` (current; the DeepSeek Harness desktop app) | **2.x** | `dsh plugin --profile web add @yanglaofish/dsh-skill-manager@^2.0.0` |
+| `0.2.x` (current; the DeepSeek Harness desktop app) | **2.x** | `dsh plugin --profile web add @yanglaofish/dsh-skill-manager@^2.0.1` |
 | `0.1.x` (older kernel) | `1.x` | `dsh plugin --profile web add @yanglaofish/dsh-skill-manager@^1.0.0` |
 
 > Upgrading from the old numbering: the historical `4.x` line is deprecated (`npm deprecate`); its last
 > release is `4.3.5`, equivalent to `1.3.5`. Moving from `4.x` to `2.x` needs an **explicit range change** —
-> `^4.3.5` will not float to `2.0.0` (2.0.0 is numerically smaller), which is the deliberate cost of
+> `^4.3.5` will not float to `2.0.1` (2.0.1 is numerically smaller), which is the deliberate cost of
 > generation-aligned numbering: the version tells you the kernel it installs into.
 
 Choose either way (the package is published to npm — prebuilt, no build approval needed):
@@ -38,7 +38,7 @@ Choose either way (the package is published to npm — prebuilt, no build approv
 **Option A: from npm (recommended)**
 
 ```sh
-dsh plugin --profile web add @yanglaofish/dsh-skill-manager@^2.0.0
+dsh plugin --profile web add @yanglaofish/dsh-skill-manager@^2.0.1
 ```
 
 **Option B: from the GitHub source**

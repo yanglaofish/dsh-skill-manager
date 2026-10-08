@@ -1,6 +1,6 @@
 {
   "name": "@yanglaofish/dsh-skill-manager",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Skill lifecycle manager for DSH 0.2.x: library / workspace / session three-layer skill management, plus the read-only preset layer read through the 0.2 scope API",
   "type": "module",
   "main": "lib/index.js",

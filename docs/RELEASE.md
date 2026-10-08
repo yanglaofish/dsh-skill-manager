@@ -26,8 +26,8 @@
 | profile | 路径 | skill-manager 的形态 | 更新方式 |
 |---|---|---|---|
 | `test` | `~/.dsh/profiles/test` | `link:D:/个人材料/Agent/dsh-workspace/dsh-skill-manager`（**junction 指向工作区**，改源码即时生效） | 不用更新，跟着工作区走 |
-| `web` | `~/.dsh/profiles/web` | registry 安装（`^2.0.0`） | 发布后 `dsh plugin --profile web add` |
-| `desktop` | `~/.dsh/profiles/desktop` | registry 安装（`^2.0.0`） | **只能由 Electron 侧管理**，见 §5 |
+| `web` | `~/.dsh/profiles/web` | registry 安装（`^2.0.1`） | 发布后 `dsh plugin --profile web add` |
+| `desktop` | `~/.dsh/profiles/desktop` | registry 安装（`^2.0.1`） | **只能由 Electron 侧管理**，见 §5 |
 
 ---
 
@@ -133,7 +133,7 @@ tag 推上去后，GitHub runner（不在公司网内，绕开 SWG 上传拦截�
 ### 本地兜底：手动触发淘宝同步
 
 ```powershell
-curl.exe -sS -X PUT "https://registry.npmmirror.com/-/sync?name=%40yanglaofish%2Fdsh-skill-manager" -H "content-type: application/json" -d "{\"version\":\"2.0.0\"}"
+curl.exe -sS -X PUT "https://registry.npmmirror.com/-/sync?name=%40yanglaofish%2Fdsh-skill-manager" -H "content-type: application/json" -d "{\"version\":\"2.0.1\"}"
 curl.exe -sS "https://registry.npmmirror.com/%40yanglaofish%2Fdsh-skill-manager" | Select-String "latest"
 ```
 
@@ -146,7 +146,7 @@ curl.exe -sS "https://registry.npmmirror.com/%40yanglaofish%2Fdsh-skill-manager"
 规范做法是走 dsh CLI（它会同时维护 `dependencies` 与 `dsh.profile.bundles`）：
 
 ```powershell
-dsh plugin --profile web add '@yanglaofish/dsh-skill-manager@^2.0.0'
+dsh plugin --profile web add '@yanglaofish/dsh-skill-manager@^2.0.1'
 ```
 
 profile 的 pnpm 默认 registry 是**华为内网镜像**，对新版本有滞后（会报 "The latest release of … is <旧版本>"
@@ -156,7 +156,7 @@ profile 的 pnpm 默认 registry 是**华为内网镜像**，对新版本有滞�
 cd $env:USERPROFILE\.dsh\profiles\web
 $env:HTTP_PROXY = 'http://proxyhk.huawei.com:8080'
 $env:HTTPS_PROXY = $env:HTTP_PROXY
-pnpm add '@yanglaofish/dsh-skill-manager@^2.0.0' --registry=https://registry.npmmirror.com
+pnpm add '@yanglaofish/dsh-skill-manager@^2.0.1' --registry=https://registry.npmmirror.com
 ```
 
 核对（**必须做**，否则可能装到旧版本）：
@@ -179,7 +179,7 @@ error: profile "desktop" is managed exclusively by the Electron application
 
 所以 desktop 的更新只能在 Electron 侧做，二选一：
 
-1. **桌面 UI**：设置 → 插件（Plugins）→ 找到 `@yanglaofish/dsh-skill-manager` → 更新到 `^2.0.0`
+1. **桌面 UI**：设置 → 插件（Plugins）→ 找到 `@yanglaofish/dsh-skill-manager` → 更新到 `^2.0.1`
    （或先卸载再安装）；
 2. **在桌面会话里用内核的 `plugin_manager` 工具**（`install_bundle`），等价于 UI 操作。
 
@@ -220,7 +220,7 @@ error: profile "desktop" is managed exclusively by the Electron application
 
 ---
 
-## 8. 世代重编号是怎么落地的（本次 `4.3.5 → 1.3.5 / 2.0.0` 的实际步骤）
+## 8. 世代重编号是怎么落地的（本次 `4.3.5 → 1.3.5 / 2.0.1` 的实际步骤）
 
 供以后做同类迁移时照抄。要点是**两个独立 commit + 两个 tag**，顺序不能反：
 
@@ -233,7 +233,7 @@ error: profile "desktop" is managed exclusively by the Electron application
    代际正确的版本号，而不是引入行为变化。
 2. **用 npm-admin.yml deprecate `@yanglaofish/dsh-skill-manager@^4.0.0`**，消息指向 `1.x`（0.1 世代）
    与 `2.x`（0.2 世代）。
-3. **commit B（0.2 迁移）**：`version: 2.0.0` + 全部 0.2 适配（见 `lib/index.js` 顶部与
+3. **commit B（0.2 迁移）**：`version: 2.0.1` + 全部 0.2 适配（见 `lib/index.js` 顶部与
    `test/manifest-compat.test.mjs` 注释里逐条记录的破坏性变更）。
-   然后 `git tag v2.0.0` → push → CI 发布 `2.0.0` + 淘宝同步。
-4. 按 §5 更新 web 与 desktop 到 `^2.0.0`。
+   然后 `git tag v2.0.1` → push → CI 发布 `2.0.1` + 淘宝同步。
+4. 按 §5 更新 web 与 desktop 到 `^2.0.1`。

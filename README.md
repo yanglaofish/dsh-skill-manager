@@ -49,11 +49,11 @@ DSH 的「技能」是带 YAML frontmatter 的 Markdown 文件，是代理可复
 
 | 你的 dsh | 装哪个 | 命令 |
 |---|---|---|
-| `0.2.x`（当前，桌面版 DeepSeek Harness） | **2.x** | `dsh plugin --profile web add @yanglaofish/dsh-skill-manager@^2.0.0` |
+| `0.2.x`（当前，桌面版 DeepSeek Harness） | **2.x** | `dsh plugin --profile web add @yanglaofish/dsh-skill-manager@^2.0.1` |
 | `0.1.x`（旧内核） | `1.x` | `dsh plugin --profile web add @yanglaofish/dsh-skill-manager@^1.0.0` |
 
 > 从旧编号升级：历史 `4.x` 线已弃用（`npm deprecate`），它的最后版本是 `4.3.5`，等价于 `1.3.5`。
-> 由 `4.x` 换到 `2.x` 需要**显式改范围**——`^4.3.5` 不会自动升到 `2.0.0`（semver 上 2.0.0 更小），
+> 由 `4.x` 换到 `2.x` 需要**显式改范围**——`^4.3.5` 不会自动升到 `2.0.1`（semver 上 2.0.1 更小），
 > 这正是"代际对齐"的代价，也是我们刻意接受的：版本号能直接读出可装的内核。
 
 两种安装方式任选其一（npm 包已发布，拉取即用、免构建授权）：
@@ -61,7 +61,7 @@ DSH 的「技能」是带 YAML frontmatter 的 Markdown 文件，是代理可复
 **方式 A：npm 安装（推荐）**
 
 ```sh
-dsh plugin --profile web add @yanglaofish/dsh-skill-manager@^2.0.0
+dsh plugin --profile web add @yanglaofish/dsh-skill-manager@^2.0.1
 ```
 
 **方式 B：GitHub 源安装**
