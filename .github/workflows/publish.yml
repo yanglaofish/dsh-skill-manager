@@ -152,7 +152,11 @@ jobs:
           npm view "${PKG}" dist-tags --registry=https://registry.npmjs.org || true
 
       # 用户铁律（dsh-proxy-pro LESSONS §28）：publish 成功后不许干等，必须主动循环
-      # 触发淘宝源同步，直到 npmmirror 的 dist-tags.latest 等于本次版本。
+      # 触发淘宝源同步，直到 npmmirror 上**这个版本可取到**。
+      #
+      # 判据是"该版本出现在 versions 里"，不是 dist-tags.latest：代际对齐编号下，历史
+      # 世代线（1.x）永远不会成为 latest（latest 属于当前世代 2.x），拿 latest 比对
+      # 会让 1.x 的发布必然在 60 轮后判失败。
       #
       # 两个已踩过的坑：
       #  1) 端点：npmmirror 的同步 API 用 QUERY 参数收包名 ——
@@ -161,7 +165,7 @@ jobs:
       #     吞掉，看起来"同步过了"，其实一直靠懒同步兜底。
       #  2) 只 PUT 一次不够：PUT 返回 201 只是入队确认，不等于同步完成。实测要
       #     11~33 轮（2~4 分钟）才拉到，所以这里每轮先重发再轮询（LESSONS §28）。
-      - name: Taobao mirror — active sync + poll dist-tags.latest
+      - name: Taobao mirror — active sync + poll until this version resolves
         shell: bash
         run: |
           set -uo pipefail
@@ -169,21 +173,24 @@ jobs:
           VER="${REF#v}"
           ENC='%40yanglaofish%2Fdsh-skill-manager'
           echo "target=${VER}"
-          LATEST=''
+          STATE=''
           for i in $(seq 1 60); do
             curl -sS -X PUT "https://registry.npmmirror.com/-/sync?name=${ENC}" \
               -H 'content-type: application/json' -d "{\"version\":\"${VER}\"}" \
               -o /tmp/sync.json -w "trigger ${i}: http=%{http_code}\n" || true
-            LATEST=$(curl -sS "https://registry.npmmirror.com/${ENC}" \
-              | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{console.log(JSON.parse(d)['dist-tags']?.latest||'')}catch{console.log('')}})" 2>/dev/null || echo '')
-            echo "poll ${i}: tb latest=${LATEST} (want ${VER})"
-            if [ "${LATEST}" = "${VER}" ]; then
-              echo "SYNCED: ${LATEST}"
-              exit 0
-            fi
+            # 用环境变量传版本号（`node -e` 的 argv 下标易错，见 dsh-proxy-pro LESSONS §29）
+            STATE=$(curl -sS "https://registry.npmmirror.com/${ENC}" \
+              | TARGET_VERSION="${VER}" node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const j=JSON.parse(d);const has=Object.prototype.hasOwnProperty.call(j.versions||{},process.env.TARGET_VERSION);console.log((has?'VERSION_OK ':'MISSING ')+(j['dist-tags']?.latest||''))}catch{console.log('UNREADABLE ')}})" 2>/dev/null || echo 'UNREADABLE ')
+            echo "poll ${i}: tb state=${STATE} (want version ${VER})"
+            case "${STATE}" in
+              VERSION_OK*)
+                echo "SYNCED: ${VER} is resolvable on npmmirror"
+                exit 0
+                ;;
+            esac
             sleep 8
           done
-          echo "::error::淘宝源 8 分钟内没同步到 ${VER}。若 npmjs 侧走的是 staged publishing（202），请先在 npmjs 网页做 2FA 批准或用 npm stage approve，然后重跑本 job。"
+          echo "::error::淘宝源 8 分钟内没能取到 ${VER}。若 npmjs 侧走的是 staged publishing（202），请先在 npmjs 网页做 2FA 批准或用 npm stage approve，然后重跑本 job。"
           exit 1
 
       - name: Report dist-tags afterwards
