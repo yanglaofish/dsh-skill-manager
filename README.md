@@ -31,7 +31,7 @@ DSH 的「技能」是带 YAML frontmatter 的 Markdown 文件，是代理可复
 
 它不改变 DSH 的技能加载机制——它管理技能在磁盘上的组织方式，让 DSH 原生引擎读到的正是你想要的集合。
 
-> **v2.0 里程碑（dsh 0.2 世代首发，取代 4.x 编号线）**：编号约定改为「插件大版本 = 它服务的 dsh 代际」——`2.x` 服务 dsh `0.2.x`，`1.x` 服务 dsh `0.1.x`（`1.3.5` = 旧 `4.3.5` 的同内容重编号），旧 `4.x` 已弃用。代码侧适配 dsh 0.2 的三处非兼容变更：① **预设层改走作用域 API** —— `agentPresets.resolvedRoots` 与磁盘预设目录在 0.2 均已消失，改为 `agentPresets.acquireScope(id)` + `ctx.skills.list({ scope })` 读取每个预设自己的技能层，并扣掉「环境目录 + 多预设共有」的部分，只保留该 preset 真正新增的贡献（租约在 finally 释放）；② **webServer 改为晚挂载懒注册** —— 0.2 里 `dsh-host-webserver` 在插件行 apply 之后才挂载，旧的 `apply` 期读一次 `ctx.webServer` 会静默不注册路由，现在走 `ctx.inject(['webServer'], cb)` 且注册成功会留一行 info 日志；③ **补齐世代声明** —— 新增 `@deepseek-ai/dsh-*` 的 `peerDependencies`（`>=0.2.0-rc.2 <0.3.0`），并新增清单级护栏 `test/manifest-compat.test.mjs`（21 项）拦住这些**静默失败**；④ 另修两处同源静默缺陷 —— 路由析构改用 `ctx.effect`（0.2 没有 `dispose` 事件，旧写法让 disposer 永不执行，重载时 `duplicate route` 会直接炸掉插件）、客户端"当前会话"改用官方口径推导（0.2 的会话快照没有 `current` 字段，旧读法让面板恒无当前工作区）；⑤ 修掉会话层一处写死缺陷 —— `/view` 回传的是「已保存的 cwd」而不是**生效的工作区**，未写过插件状态的会话因此拿到空 cwd，会话页的逐个勾选与「回到跟随工作区」全部以 `cwd 必须为工作区绝对路径` 失败（表现就是"点了完全没反应"）；现在服务端改用会话的**持久化 header**（`sessionPersistence.stat`，不取写所有权、与内存状态无关）解析工作区——`ctx.sessions` 是**按进程独立**的内存存储，而"只是打开一个会话"并不会把它放进去，所以旧写法在 test/desktop 任一实例里都会把这个会话解析成空工作区；同时客户端不再上传空 cwd，勾选里出现技能库之外的名字时会**明确列出**而不是静默丢弃。详见 [docs/VERSIONING.md](docs/VERSIONING.md) 与 [docs/RELEASE.md](docs/RELEASE.md)。
+> **v2.0 里程碑（dsh 0.2 世代首发，取代 4.x 编号线）**：编号约定改为「插件大版本 = 它服务的 dsh 代际」——`2.x` 服务 dsh `0.2.x`，`1.x` 服务 dsh `0.1.x`（`1.3.5` = 旧 `4.3.5` 的同内容重编号），旧 `4.x` 已弃用。代码侧适配 dsh 0.2 的三处非兼容变更：① **预设层改走作用域 API** —— `agentPresets.resolvedRoots` 与磁盘预设目录在 0.2 均已消失，改为 `agentPresets.acquireScope(id)` + `ctx.skills.list({ scope })` 读取每个预设自己的技能层，并扣掉「环境目录 + 多预设共有」的部分，只保留该 preset 真正新增的贡献（租约在 finally 释放）；② **webServer 改为晚挂载懒注册** —— 0.2 里 `dsh-host-webserver` 在插件行 apply 之后才挂载，旧的 `apply` 期读一次 `ctx.webServer` 会静默不注册路由，现在走 `ctx.inject(['webServer'], cb)` 且注册成功会留一行 info 日志；③ **补齐世代声明** —— 新增 `@deepseek-ai/dsh-*` 的 `peerDependencies`（`>=0.2.0-rc.2 <0.3.0`），并新增清单级护栏 `test/manifest-compat.test.mjs`（17 项）拦住这些**静默失败**；④ 另修两处同源静默缺陷 —— 路由析构改用 `ctx.effect`（0.2 没有 `dispose` 事件，旧写法让 disposer 永不执行，重载时 `duplicate route` 会直接炸掉插件）、客户端"当前会话"改用官方口径推导（0.2 的会话快照没有 `current` 字段，旧读法让面板恒无当前工作区）；⑤ 修掉会话层一处写死缺陷 —— `/view` 回传的是「已保存的 cwd」而不是**生效的工作区**，未写过插件状态的会话因此拿到空 cwd，会话页的逐个勾选与「回到跟随工作区」全部以 `cwd 必须为工作区绝对路径` 失败（表现就是"点了完全没反应"）；现在服务端改用会话的**持久化 header**（`sessionPersistence.stat`，不取写所有权、与内存状态无关）解析工作区——`ctx.sessions` 是**按进程独立**的内存存储，而"只是打开一个会话"并不会把它放进去，所以旧写法在 test/desktop 任一实例里都会把这个会话解析成空工作区；同时客户端不再上传空 cwd，勾选里出现技能库之外的名字时会**明确列出**而不是静默丢弃。详见 [docs/VERSIONING.md](docs/VERSIONING.md) 与 [docs/RELEASE.md](docs/RELEASE.md)。
 >
 > **v4.3 里程碑**：浏览器信任围栏——面板 API（`/skill-manager/api/*`）接入与 dsh 官方 `/api` 一致的 confused-deputy 防线（`isTrustedPanelRequest`）：Host 必须为 loopback（localhost / 127/8 / [::1]，防 DNS rebinding）、`sec-fetch-site: cross-site` 一律 403（防 CSRF）、带 Origin 时须同源；测试 203 条。此围栏镜像 `dsh-client-connection` 的 `isTrustedApiRequest`（官方 RPC 通道内置，插件自建路由需自行复制），纯头判定、无额外依赖。
 >
@@ -124,7 +124,7 @@ dsh-skill-manager
 │       └── SkillRow             三处共用的统一技能行组件
 ├── cordis.patch.yml          bundle patch：挂载宿主侧插件行
 ├── test/
-│   ├── unit.mjs              220 条隔离单测（临时 DSH_HOME，含错误边界）
+│   ├── unit.mjs              219 条隔离单测（临时 DSH_HOME，含错误边界）
 │   ├── manifest-compat.test.mjs  世代护栏：peer 范围 / 客户端 inject / 晚挂载 webServer / 预设作用域
 │   └── seed-sample.mjs       示例技能写入工具（开发验证用）
 ├── docs/
@@ -146,17 +146,6 @@ dsh-skill-manager
 └─ 技能库   (Library)    ~/.dsh/skill-manager/library/  ← 纯技能池，引擎不扫
                          所有用户技能平铺于此；不做启用/停用
 ```
-
-> **⚠️ 会话层是面板视图，不改引擎加载（dsh 0.2 的架构边界）**
->
-> dsh 0.2 的技能可见性只由**会话 cwd 对应的磁盘根**（`<项目根>/.dsh/skills`）与 **agent preset** 决定，
-> **没有「按会话增删技能」的接口**。因此：
->
-> - 会话页的勾选**只影响本面板的自选子集**，**不会**让模型停止使用某个技能。看到「工作区已启用 ·
->   引擎仍会加载」的行，就是这种情况；
-> - 想让某个技能在本工作区**真正停用**，必须动**工作区层**：设置 → 技能管理 → 工作区技能 →
->   取消勾选（它会删掉 `<项目根>/.dsh/skills` 里的 link），引擎才不再加载；
-> - 会话页默认只列「本会话相关」（会话自选 ∪ 工作区启用），其余用「显示全部可选」按钮展开。
 
 **关键语义**：技能库不是「全局启用」——库中的技能对任何工作区都不可见，直到某个工作区把它勾选进 `<项目根>/.dsh/skills`（白名单）。这避免了旧模型「全局启用了但项目不想开」的冲突：启用与否完全由每个项目自己决定。技能库位于 `~/.dsh/skill-manager/` 下，不在任何被扫描的磁盘根里（dsh 0.2 的 `dsh-skill-filesystem` 只扫项目根 `.dsh/skills` / `.agents/skills`、`customSkillDirs` 与用户根），天然实现白名单。第三层「预设」由 dsh 引擎自己贡献，见下。
 
@@ -223,7 +212,7 @@ Client 勾选技能即固定显式子集（`explicit=true`）：宿主允许库�
 
 ```sh
 npm test          # = 下面两步；两者都必须绿
-node test/unit.mjs                      # 220 条隔离单测（临时 DSH_HOME，不污染真实环境）
+node test/unit.mjs                      # 219 条隔离单测（临时 DSH_HOME，不污染真实环境）
 node --test test/manifest-compat.test.mjs   # 17 条运行时世代 / 装配护栏
 ```
 

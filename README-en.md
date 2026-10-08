@@ -13,7 +13,7 @@ DSH "skills" are Markdown files with YAML frontmatter — the reusable capabilit
 
 It does not change how DSH loads skills — it manages how skills are organized on disk, so the native DSH engine reads exactly the set you intend.
 
-> **v2.0 milestone (first release of the dsh 0.2 generation; supersedes the 4.x numbering)**: the versioning convention is now "the plugin's major version is the dsh generation it serves" — `2.x` serves dsh `0.2.x`, `1.x` serves dsh `0.1.x` (`1.3.5` is the old `4.3.5` renumbered, same content), and the old `4.x` line is deprecated. The code adapts to three breaking changes in dsh 0.2: ① **the preset layer now reads through the scope API** — `agentPresets.resolvedRoots` and on-disk preset directories are both gone in 0.2, so presets are read with `agentPresets.acquireScope(id)` + `ctx.skills.list({ scope })`, subtracting the ambient catalog and anything every preset shares (the lease is released in a `finally`); ② **webServer is mounted late, so the route registers lazily** — 0.2 mounts `dsh-host-webserver` after plugin rows apply, and the old single `ctx.webServer` read during `apply` silently registered nothing; it now goes through `ctx.inject(['webServer'], cb)` and logs one info line on success; ③ **generation declaration added** — `@deepseek-ai/dsh-*` `peerDependencies` (`>=0.2.0-rc.2 <0.3.0`) plus a manifest-level guard, `test/manifest-compat.test.mjs` (21 assertions), that catches these **silent** failures. Two same-family defects were fixed too: teardown now goes through `ctx.effect` (0.2 has no `dispose` event, so the old disposer never ran and the first reload would throw a `duplicate route` inside `apply`), and the client's "current session" read now uses the official derivation (the 0.2 session snapshot has no `current` field). ⑤ A hard-coded defect in the session layer was fixed too — `/view` returned the *saved* cwd instead of the **effective workspace**, so a session that had never written plugin state received an empty cwd and every per-skill toggle plus "back to follow workspace" failed with `cwd must be an absolute workspace path` (which the user sees as "clicking does nothing"); the host now resolves the workspace from the session's **durable header** (`sessionPersistence.stat`, no write ownership, independent of in-memory state) — `ctx.sessions` is a **per-process** in-memory store and merely opening a session does not put it there, so the old read resolved that session to an empty workspace in either the test or the desktop instance; the client no longer posts an empty cwd, and names outside the skill library are now listed explicitly instead of being dropped silently. See [docs/VERSIONING.md](docs/VERSIONING.md) and [docs/RELEASE.md](docs/RELEASE.md).
+> **v2.0 milestone (first release of the dsh 0.2 generation; supersedes the 4.x numbering)**: the versioning convention is now "the plugin's major version is the dsh generation it serves" — `2.x` serves dsh `0.2.x`, `1.x` serves dsh `0.1.x` (`1.3.5` is the old `4.3.5` renumbered, same content), and the old `4.x` line is deprecated. The code adapts to three breaking changes in dsh 0.2: ① **the preset layer now reads through the scope API** — `agentPresets.resolvedRoots` and on-disk preset directories are both gone in 0.2, so presets are read with `agentPresets.acquireScope(id)` + `ctx.skills.list({ scope })`, subtracting the ambient catalog and anything every preset shares (the lease is released in a `finally`); ② **webServer is mounted late, so the route registers lazily** — 0.2 mounts `dsh-host-webserver` after plugin rows apply, and the old single `ctx.webServer` read during `apply` silently registered nothing; it now goes through `ctx.inject(['webServer'], cb)` and logs one info line on success; ③ **generation declaration added** — `@deepseek-ai/dsh-*` `peerDependencies` (`>=0.2.0-rc.2 <0.3.0`) plus a manifest-level guard, `test/manifest-compat.test.mjs` (17 assertions), that catches these **silent** failures. Two same-family defects were fixed too: teardown now goes through `ctx.effect` (0.2 has no `dispose` event, so the old disposer never ran and the first reload would throw a `duplicate route` inside `apply`), and the client's "current session" read now uses the official derivation (the 0.2 session snapshot has no `current` field). ⑤ A hard-coded defect in the session layer was fixed too — `/view` returned the *saved* cwd instead of the **effective workspace**, so a session that had never written plugin state received an empty cwd and every per-skill toggle plus "back to follow workspace" failed with `cwd must be an absolute workspace path` (which the user sees as "clicking does nothing"); the host now resolves the workspace from the session's **durable header** (`sessionPersistence.stat`, no write ownership, independent of in-memory state) — `ctx.sessions` is a **per-process** in-memory store and merely opening a session does not put it there, so the old read resolved that session to an empty workspace in either the test or the desktop instance; the client no longer posts an empty cwd, and names outside the skill library are now listed explicitly instead of being dropped silently. See [docs/VERSIONING.md](docs/VERSIONING.md) and [docs/RELEASE.md](docs/RELEASE.md).
 >
 > **v4.1 milestone**: session layer unlocked to the full library set (one-click "back to follow", implicit auto-follow removed); detail modal consolidated into a single file browser (rendered Markdown preview, root directory node, draggable split — left ≥15%, height 30–80vh); workspace picker auto-fills from the session store (including panels never opened) and dead paths are pruned on read; the panel shows the plugin version badge.
 >
@@ -121,21 +121,6 @@ dsh-skill-manager
                                 every user skill lives here; no enable/disable concept
 ```
 
-> **⚠️ The session layer is a panel view — it does NOT change engine loading (a dsh 0.2 architectural boundary)**
->
-> In dsh 0.2 a skill's visibility is decided only by the **disk root of the session's cwd**
-> (`<project root>/.dsh/skills`) and the **agent preset** — there is **no API to add or remove skills per
-> session**. Therefore:
->
-> - checking or unchecking in the session panel only affects **this panel's own selected subset**; it will
->   **not** stop the model from using a skill. Rows labelled "enabled for the workspace · the engine still
->   loads it" are exactly that case;
-> - to really disable a skill in a workspace you must change the **workspace layer**: Settings → Skill
->   manager → Workspace skills → uncheck it (this deletes the link under `<project root>/.dsh/skills`), and
->   only then does the engine stop loading it;
-> - the session panel now lists only what is "relevant to this session" (session picks ∪ workspace enabled)
->   by default; the "show all optional" button expands the rest of the library.
-
 **Key semantics**: the library is **not** "globally enabled" — a skill in the library is invisible to every workspace until a workspace checks it into `<cwd>/.dsh/skills` (whitelist). This removes the old-model conflict ("enabled globally but this project doesn't want it"): enablement is decided by each project. The dsh engine only scans the workspace's `.dsh/skills` (project-dsh root) and presets; the library under `~/.dsh/skill-manager/` is never discovered, so the whitelist is enforced natively.
 
 ### Key modules
@@ -194,7 +179,7 @@ Collects across global (enabled + disabled) / presets / all registered workspace
 
 ```sh
 npm test                                    # both steps below; both must be green
-node test/unit.mjs                          # 220 isolated assertions (temporary DSH_HOME, no pollution)
+node test/unit.mjs                          # 219 isolated assertions (temporary DSH_HOME, no pollution)
 node --test test/manifest-compat.test.mjs   # 17 runtime-generation / assembly guards
 ```
 

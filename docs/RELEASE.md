@@ -180,14 +180,6 @@ pnpm add '@yanglaofish/dsh-skill-manager@^2.0.1' --registry=https://registry.npm
 `LinkType` 为空 = 真的从 registry 装的（这就是"更新非 junction 到 web"的含义）；
 若是 `Junction`，说明它被指向了源码目录，那不是发布版。
 
-> **2026-10-08 实测（2.0.1）**：
-> - `dsh plugin --profile web add …` **卡住了**：5 分钟没有任何返回，最后 kill —— 卡在华为内网镜像的元数据
->   解析上。规范做法本身没错，但在当前网络环境下**直接跑 pnpm 更快**。
-> - 上面的「代理 + 淘宝源」`pnpm add` **成功**：`Packages: +1 -2 … Done in 5.1s`；pnpm 还自动往
->   `pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude` 追加了 `@yanglaofish/dsh-skill-manager@2.0.1`
->   （这条策略见 §5.2）。
-> - 核对：`dependencies` → `^2.0.1`，`LinkType` 为空，`dsh.profile.bundles` 里该包仍在（pnpm 只动 dependencies）。
-
 ### 5.2 desktop profile
 
 desktop profile 由 Electron 应用**独占管理**，CLI 直接改会被拒绝：
@@ -201,33 +193,6 @@ error: profile "desktop" is managed exclusively by the Electron application
 1. **桌面 UI**：设置 → 插件（Plugins）→ 找到 `@yanglaofish/dsh-skill-manager` → 更新到 `^2.0.1`
    （或先卸载再安装）；
 2. **在桌面会话里用内核的 `plugin_manager` 工具**（`install_bundle`），等价于 UI 操作。
-
-> **⚠️ 2026-10-08 实测：这一步可能被 pnpm 的供应链策略挡住，而且挡住它的往往不是你要装的包**
->
-> desktop 更新时的真实报错：
->
-> ```
-> ✗ Lockfile failed supply-chain policy check (219 entries)
-> [ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION] 1 lockfile entries failed verification:
->   dshmarket@1.66.11 was published at 2026-10-07T19:30:39.965Z,
->   within the minimumReleaseAge cutoff (2026-10-07T08:51:28.368Z)
-> ```
->
-> `minimumReleaseAge` 是 pnpm 11 的供应链防护：一个版本发布后要「存活」满 N 小时（默认 24）才允许被安装，
-> 用来挡「账号被盗后立刻投毒、在撤回前尽量被装上」那类攻击（event-stream / ua-parser-js 的模式）。
-> 代价是刚发布的版本装不上——更麻烦的是**校验是整份 lockfile 级别的**：任何一个包落在冷静期，
-> 都会让整个 profile 的 pnpm 操作失败，哪怕你只是要装别的东西。
->
-> 两个必须知道的坑：
-> 1. **光往 `minimumReleaseAgeExclude` 里加包名不够**。pnpm 的报错自己写了解法：已经解析进 lockfile 的
->    条目要 `pnpm clean --lockfile && pnpm install` **重建解析**才会被重新评估（豁免只在"解析"阶段生效）。
->    desktop 的 exclude 里本来就有 `dshmarket@1.66.11`，却仍被判违规，就是这个原因。
-> 2. `plugin_manager` 报 `application: "failed"` 时，pnpm 可能**已经换掉了 node_modules** —— 实测 desktop
->    落在「`package.json` 声明 `^4.3.5` / `node_modules` 实际 `2.0.1`」的不一致状态，而**运行中的进程仍是
->    旧代码**（模块已经在内存里，必须重启才会换）。
->
-> 处置顺序：**等冷静期过去**（零风险）> 加豁免 + `pnpm clean --lockfile` 重建（会重算整个 lockfile，
-> 其他插件的版本可能跟着变动）> 放宽全局策略（不推荐）。
 
 更新后核对：
 
