@@ -46,6 +46,8 @@ jobs:
       - name: Install dependencies (unit tests need adm-zip + yaml)
         run: npm install --no-audit --no-fund --legacy-peer-deps
 
+      # 把"走了哪条认证路径"写成 annotation：step 日志要登录才能看，而认证路径是
+      # 排查发布失败的第一信息（`::notice::` 用公开 API 就能读到）。
       - name: Configure npm auth (NPM if set, else OIDC)
         shell: bash
         env:
@@ -53,9 +55,9 @@ jobs:
         run: |
           if [ -n "$NPM_TOKEN_FROM_SECRET" ]; then
             echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN_FROM_SECRET}" > "$HOME/.npmrc"
-            echo "auth: NPM secret"
+            echo "::notice title=npm auth::using repository secret NPM (token length ${#NPM_TOKEN_FROM_SECRET})"
           else
-            echo "auth: OIDC trusted publishing (npmjs Trusted Publishers must be configured)"
+            echo "::notice title=npm auth::repository secret NPM is NOT set — falling back to OIDC trusted publishing, which requires npmjs Trusted Publishers to be configured for this repository"
           fi
 
       - name: Syntax check
@@ -101,9 +103,26 @@ jobs:
           echo "manifest version = ${VER}"
           if npm view "@yanglaofish/dsh-skill-manager@${VER}" version --registry=https://registry.npmjs.org >/dev/null 2>&1; then
             echo "version ${VER} is already on npmjs — skipping publish (a re-run is a no-op, not a failure)"
-          else
-            npm publish --registry=https://registry.npmjs.org --access=public
+            exit 0
           fi
+          # 失败时把 npm 的原始输出尾部写成 annotation —— npm 的报错（401/403/404、
+          # staged publishing 的 202、2FA 要求）只有原始响应体能分清，而这些内容
+          # 默认只落在需要登录才能下载的 step 日志里。
+          STATUS=0
+          npm publish --registry=https://registry.npmjs.org --access=public > /tmp/pub.log 2>&1 || STATUS=$?
+          echo "npm publish exit=${STATUS}"
+          tail -30 /tmp/pub.log
+          if [ "$STATUS" != "0" ]; then
+            node -e '
+              const fs = require("node:fs");
+              let text = "";
+              try { text = fs.readFileSync("/tmp/pub.log", "utf8") } catch {}
+              const tail = String(text).split("\n").slice(-25).join("\n");
+              console.log("::error title=npm publish failed::" + tail.replace(/%/g, "%25").replace(/\r/g, "").replace(/\n/g, "%0A"));
+            '
+            exit 1
+          fi
+          echo "::notice title=npm publish::published ${VER} to npmjs"
 
       # 用户铁律（dsh-proxy-pro LESSONS §28）：publish 成功后不许干等，必须主动循环
       # 触发淘宝源同步，直到 npmmirror 的 dist-tags.latest 等于本次版本。
