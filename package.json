@@ -25,7 +25,8 @@
     "yaml": "^2.9.0"
   },
   "scripts": {
-    "test": "node test/unit.mjs && node --test test/manifest-compat.test.mjs"
+    "test": "node --check lib/index.js && node --check lib/client.js && node test/unit.mjs && node --test test/manifest-compat.test.mjs",
+    "syntax": "node --check lib/index.js && node --check lib/client.js"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.0",
