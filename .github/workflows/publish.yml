@@ -61,12 +61,32 @@ jobs:
       - name: Syntax check
         run: node --check lib/index.js && node --check lib/client.js
 
+      # 单测必须两端都能跑：开发在 Windows，runner 是 Linux。失败时把尾部输出写成
+      # `::error::` annotation —— step 日志要登录 GitHub 才能下载，而 annotation 通过
+      # 公开 API 就能读（/check-runs/{id}/annotations），这样"CI 红了但看不到原因"
+      # 不会再发生第二次。
       - name: Unit tests
         shell: bash
         run: |
-          node test/unit.mjs
+          STATUS=0
+          node test/unit.mjs > /tmp/unit.log 2>&1 || STATUS=$?
+          if [ "$STATUS" != "0" ]; then
+            node -e '
+              const fs = require("node:fs");
+              let text = "";
+              try { text = fs.readFileSync("/tmp/unit.log", "utf8") } catch {}
+              const lines = String(text).split("\n");
+              const bad = lines.filter((l) => /❌|Error|error|throw|not ok/.test(l));
+              const tail = (bad.length ? bad : lines).slice(-40).join("\n");
+              console.log("::error title=unit tests failed on the runner::" + tail.replace(/%/g, "%25").replace(/\r/g, "").replace(/\n/g, "%0A"));
+            '
+            echo "--- last 40 lines of node test/unit.mjs ---"
+            tail -40 /tmp/unit.log
+            exit 1
+          fi
+          tail -3 /tmp/unit.log
           # 清单级世代护栏是 2.x 才有的：1.3.5 是 dsh 0.1 世代的收尾重编号版，
-          # 那时还不存在这个文件。条件执行让 v1.3.5 与 v2.0.0 两个 tag 都能绿。
+          # 那时还不存在这个文件。条件执行让两个 tag 都能跑。
           if [ -f test/manifest-compat.test.mjs ]; then
             node --test test/manifest-compat.test.mjs
           fi
