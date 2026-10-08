@@ -1,0 +1,103 @@
+# npm 管理操作：deprecate（弃用）或 unpublish（撤销发布）一个精确版本。
+#
+# 为什么在 CI 里做：两者都是对 registry 的**认证写操作**，公司出口的 SWG 会拦上传，
+# 本地做不了（dsh-proxy-pro 的 LESSONS §32）。云端 runner 不在公司网内。
+#
+# 该选哪个（先听 npm 官方建议）：
+#   - `deprecate`（推荐）：版本仍可被已固定它的 lockfile 安装，但任何人解析它都会
+#     看到警告。用它标记"坏版本"。
+#   - `unpublish`（有时限）：npm 只允许在发布后 72 小时内、且没有依赖者时删除单个
+#     版本；删除后该版本号不可复用。仅用于"根本没人可能装过"的事故版本——超过窗口
+#     会被拒绝，这不是失败，是 npm 的设计。
+#
+# 典型用法（本仓库的世代重编号）：
+#   把老编号 4.x 线整体弃用，指到新编号：
+#     operation = deprecate
+#     target    = @yanglaofish/dsh-skill-manager@^4.0.0
+#     message   = "..."
+name: npm admin (deprecate / unpublish)
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: 'deprecate（推荐）或 unpublish（72 小时窗口，且无依赖者）'
+        required: true
+        default: deprecate
+        type: choice
+        options:
+          - deprecate
+          - unpublish
+      target:
+        description: '精确的 package@version 或 package@range，例如 @yanglaofish/dsh-skill-manager@^4.0.0'
+        required: true
+      message:
+        description: '弃用提示（仅 deprecate 用）'
+        required: false
+        default: '旧世代编号：仅适配 dsh 0.1.x。请改用 2.x（dsh 0.2.x）或 1.x（dsh 0.1.x，重编号后的同内容版本）'
+      otp:
+        description: 'npm 要求 2FA 时填一次性验证码（可选）'
+        required: false
+        default: ''
+
+jobs:
+  admin:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Configure npm auth (repo secret NPM)
+        shell: bash
+        env:
+          NPM_TOKEN_FROM_SECRET: ${{ secrets.NPM }}
+        run: |
+          if [ -z "$NPM_TOKEN_FROM_SECRET" ]; then
+            echo "::error::the NPM repository secret is missing"
+            exit 1
+          fi
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN_FROM_SECRET}" > "$HOME/.npmrc"
+
+      - name: Run the operation
+        shell: bash
+        env:
+          OP: ${{ inputs.operation }}
+          TARGET: ${{ inputs.target }}
+          MSG: ${{ inputs.message }}
+          OTP: ${{ inputs.otp }}
+        run: |
+          set -euo pipefail
+          # 只接受带版本/范围的 target：否则裸包名会落到 `npm unpublish`，
+          # 那是删掉整个包，不是删一个版本。
+          case "$TARGET" in
+            @*/*@*|[A-Za-z0-9._-]*@*) : ;;
+            *) echo "::error::target 必须是 package@version 或 package@range（收到 '${TARGET}'）"; exit 1 ;;
+          esac
+          OTP_FLAG=""
+          [ -n "${OTP:-}" ] && OTP_FLAG="--otp=${OTP}"
+          echo "operation=${OP} target=${TARGET}"
+          case "$OP" in
+            deprecate)
+              # ${OTP_FLAG} 故意不加引号：为空即不加该参数。
+              npm deprecate "$TARGET" "$MSG" ${OTP_FLAG}
+              ;;
+            unpublish)
+              npm unpublish "$TARGET" ${OTP_FLAG}
+              ;;
+            *)
+              echo "::error::unknown operation ${OP}"; exit 1
+              ;;
+          esac
+
+      - name: Report the package's dist-tags afterwards
+        if: always()
+        shell: bash
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          NAME="${TARGET%@*}"
+          echo "package: ${NAME}"
+          npm view "${NAME}" dist-tags versions --json || true

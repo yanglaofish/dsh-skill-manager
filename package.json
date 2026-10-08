@@ -1,6 +1,6 @@
 {
   "name": "@yanglaofish/dsh-skill-manager",
-  "version": "4.3.5",
+  "version": "1.3.5",
   "description": "Skill lifecycle manager: library / workspace / session three-layer skill management for DSH",
   "type": "module",
   "main": "lib/index.js",
