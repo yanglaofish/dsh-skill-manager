@@ -100,16 +100,42 @@ jobs:
         run: |
           set -uo pipefail
           VER="$(node -p "require('./package.json').version")"
+          PKG='@yanglaofish/dsh-skill-manager'
           echo "manifest version = ${VER}"
-          if npm view "@yanglaofish/dsh-skill-manager@${VER}" version --registry=https://registry.npmjs.org >/dev/null 2>&1; then
+          if npm view "${PKG}@${VER}" version --registry=https://registry.npmjs.org >/dev/null 2>&1; then
             echo "version ${VER} is already on npmjs — skipping publish (a re-run is a no-op, not a failure)"
             exit 0
           fi
-          # 失败时把 npm 的原始输出尾部写成 annotation —— npm 的报错（401/403/404、
-          # staged publishing 的 202、2FA 要求）只有原始响应体能分清，而这些内容
-          # 默认只落在需要登录才能下载的 step 日志里。
+
+          # npm 拒绝给"低于当前 latest"的版本**隐式**打 latest：
+          #   Cannot implicitly apply the "latest" tag because previously published
+          #   version 4.3.5 is higher than the new version 2.0.1.
+          # 而本插件的版本号是「代际对齐」的（2.x 服务 dsh 0.2.x，数字上低于旧的 4.x 线），
+          # 所以必须**显式**指定 tag：
+          #   * 当前世代（major >= 2）必须接管 latest —— 否则 `npm i <pkg>` 仍会装到旧的
+          #     4.x 代码（4.3.5 是坏的那一版）。显式 --tag latest 不做高低检查。
+          #   * 历史世代线（major = 1，服务 dsh 0.1.x）数字同样更低，但它不该抢 latest，
+          #     发到自己的 `v1` tag 即可 —— `npm i <pkg>@1` 依然可用。
+          MAJOR="${VER%%.*}"
+          if [ "$MAJOR" = "1" ]; then
+            PRIMARY_TAG="v1"
+          else
+            PRIMARY_TAG="latest"
+          fi
+          echo "publishing ${VER} with --tag ${PRIMARY_TAG}"
+
           STATUS=0
-          npm publish --registry=https://registry.npmjs.org --access=public > /tmp/pub.log 2>&1 || STATUS=$?
+          npm publish --registry=https://registry.npmjs.org --access=public --tag "${PRIMARY_TAG}" > /tmp/pub.log 2>&1 || STATUS=$?
+          if [ "$STATUS" != "0" ] && [ "$PRIMARY_TAG" = "latest" ]; then
+            # 兜底：万一连显式 --tag latest 也被拒，就先发到临时 tag 再把 latest 指过去。
+            echo "explicit --tag latest was refused — retrying via a temporary tag, then moving latest"
+            tail -5 /tmp/pub.log
+            STATUS=0
+            npm publish --registry=https://registry.npmjs.org --access=public --tag pending > /tmp/pub.log 2>&1 || STATUS=$?
+            if [ "$STATUS" = "0" ]; then
+              npm dist-tag add "${PKG}@${VER}" latest >> /tmp/pub.log 2>&1 || STATUS=$?
+            fi
+          fi
           echo "npm publish exit=${STATUS}"
           tail -30 /tmp/pub.log
           if [ "$STATUS" != "0" ]; then
@@ -122,7 +148,8 @@ jobs:
             '
             exit 1
           fi
-          echo "::notice title=npm publish::published ${VER} to npmjs"
+          echo "::notice title=npm publish::published ${VER} to npmjs with tag ${PRIMARY_TAG}"
+          npm view "${PKG}" dist-tags --registry=https://registry.npmjs.org || true
 
       # 用户铁律（dsh-proxy-pro LESSONS §28）：publish 成功后不许干等，必须主动循环
       # 触发淘宝源同步，直到 npmmirror 的 dist-tags.latest 等于本次版本。

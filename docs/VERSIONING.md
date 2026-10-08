@@ -15,15 +15,28 @@
 同一个约定已经用在姊妹插件上：`@yanglaofish/dsh-proxy-pro` 的 `1.0.x` 服务 dsh 0.1，
 `2.0.x` 服务 dsh 0.2。两个插件的编号从此可以横向对照。
 
-### 为什么 2.0.1 比 4.3.5 "小"，依然是对的
+### 为什么 2.0.1 比 4.3.5 "小"，以及发布时必须**显式**指定 tag
 
-npm 只要求"同一个版本号不能被发布两次"，**不要求新版本必须更大**，所以 2.0.1 可以正常发布，
-并且 `npm publish` 会把 `dist-tags.latest` 指向它。代价是：
+npm 只要求"同一个版本号不能被发布两次"，**不要求新版本必须更大**，所以 2.0.1 可以发布。
+但它**不会**允许把更低的版本**隐式**打成 `latest` —— 实测（2026-10-08，CI 原文）：
 
-- `^4.3.5` 这种范围**不会**自动升到 2.x（semver 上 2.0.1 < 4.3.5）。改用 2.x 必须显式写范围
-  （`^2.0.1`）或显式指定版本。我们自己的 web / desktop profile 会在发布流程里一起改（见
-  `docs/RELEASE.md`）。
-- 老编号线用 deprecate 提示，不动已发布的版本（`npm deprecate`，见 §4）。
+```
+npm error Cannot implicitly apply the "latest" tag because previously published
+version 4.3.5 is higher than the new version 2.0.1. You must specify a tag using --tag.
+```
+
+所以代际对齐编号的代价是**必须显式管理 dist-tag**（已固化进 `publish.yml`，按 major 自动选择）：
+
+| 发布的是 | 命令 | 效果 |
+|---|---|---|
+| 当前世代（major ≥ 2） | `npm publish --tag latest` | 显式接管 `latest`；否则 `npm i <pkg>` 会装到旧的 4.x 线 |
+| 历史世代线（major = 1，服务 dsh 0.1.x） | `npm publish --tag v1` | 不抢 `latest`；`npm i <pkg>@1` 仍可用 |
+
+若显式 `--tag latest` 也被拒，workflow 会退化为"先发到临时 `pending` tag，再
+`npm dist-tag add <pkg>@<ver> latest`"。
+
+另外 `^4.3.5` 这类范围**不会**自动升到 2.x（semver 上 2.0.1 < 4.3.5），改用 2.x 必须显式写范围
+（`^2.0.1`）或显式指定版本。4.x 线用 `deprecate` 提示，见 §4。
 
 ---
 

@@ -121,6 +121,16 @@ tag 推上去后，GitHub runner（不在公司网内，绕开 SWG 上传拦截�
    `PUT https://registry.npmmirror.com/-/sync?name=%40yanglaofish%2Fdsh-skill-manager`
    再轮询 `dist-tags.latest`，最多 60 轮、每轮间隔 8 秒，直到等于本次版本才成功退出。
 
+> **代际对齐编号必须显式指定 dist-tag（2026-10-08 实测）**：版本号低于现役 `latest` 时，npm
+> **拒绝隐式打 latest**：
+> ```
+> npm error Cannot implicitly apply the "latest" tag because previously published
+> version 4.3.5 is higher than the new version 2.0.1. You must specify a tag using --tag.
+> ```
+> workflow 已按 major 自动选择：`major ≥ 2` → `--tag latest`（**必须**接管，否则 `npm i`
+> 仍装旧 4.x）；`major = 1` → `--tag v1`（历史线不抢 latest）。显式 latest 再被拒时，退化为
+> "发到临时 `pending` tag + `npm dist-tag add … latest`"。
+
 > ⚠️ 两个已踩过的坑，改这个 workflow 时别改回去：
 > - 端点是**查询参数**式 `/-/sync?name=…`（201）；路径式 `/-/sync/@scope%2Fname` 返回 **404**。
 >   旧写法被 `|| true` 吞掉，看起来"同步过了"，实际一直靠懒同步兜底。
