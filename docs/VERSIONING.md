@@ -30,7 +30,16 @@ version 4.3.5 is higher than the new version 2.0.1. You must specify a tag using
 | 发布的是 | 命令 | 效果 |
 |---|---|---|
 | 当前世代（major ≥ 2） | `npm publish --tag latest` | 显式接管 `latest`；否则 `npm i <pkg>` 会装到旧的 4.x 线 |
-| 历史世代线（major = 1，服务 dsh 0.1.x） | `npm publish --tag v1` | 不抢 `latest`；`npm i <pkg>@1` 仍可用 |
+| 历史世代线（major = 1，服务 dsh 0.1.x） | `npm publish --tag legacy` | 不抢 `latest`；`npm i <pkg>@1` 仍按版本号工作 |
+
+**tag 名不能是合法的 semver range**：`npm publish --tag v1` 会被**直接拒绝**（实测 2026-10-08）：
+
+```
+npm error Tag name must not be a valid SemVer range: v1
+```
+
+所以历史世代线用 `legacy` 这个名字，而不是看起来更自然的 `v1`。`npm i <pkg>@1` 靠的是
+**版本号范围**、与 dist-tag 无关，因此不受影响。
 
 若显式 `--tag latest` 也被拒，workflow 会退化为"先发到临时 `pending` tag，再
 `npm dist-tag add <pkg>@<ver> latest`"。

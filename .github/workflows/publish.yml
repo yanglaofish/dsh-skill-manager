@@ -115,10 +115,12 @@ jobs:
           #   * 当前世代（major >= 2）必须接管 latest —— 否则 `npm i <pkg>` 仍会装到旧的
           #     4.x 代码（4.3.5 是坏的那一版）。显式 --tag latest 不做高低检查。
           #   * 历史世代线（major = 1，服务 dsh 0.1.x）数字同样更低，但它不该抢 latest，
-          #     发到自己的 `v1` tag 即可 —— `npm i <pkg>@1` 依然可用。
+          #     发到自己的 `legacy` tag 即可 —— `npm i <pkg>@1` 依然可用（按版本号，不依赖
+          #     tag 名）。tag 名**必须不是合法的 semver range**：npm 会直接拒绝
+          #     `--tag v1`（`Tag name must not be a valid SemVer range: v1`）。
           MAJOR="${VER%%.*}"
           if [ "$MAJOR" = "1" ]; then
-            PRIMARY_TAG="v1"
+            PRIMARY_TAG="legacy"
           else
             PRIMARY_TAG="latest"
           fi

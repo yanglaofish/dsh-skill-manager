@@ -128,7 +128,8 @@ tag 推上去后，GitHub runner（不在公司网内，绕开 SWG 上传拦截�
 > version 4.3.5 is higher than the new version 2.0.1. You must specify a tag using --tag.
 > ```
 > workflow 已按 major 自动选择：`major ≥ 2` → `--tag latest`（**必须**接管，否则 `npm i`
-> 仍装旧 4.x）；`major = 1` → `--tag v1`（历史线不抢 latest）。显式 latest 再被拒时，退化为
+> 仍装旧 4.x）；`major = 1` → `--tag legacy`（历史线不抢 latest，且 tag 名**不能**是合法
+> semver range —— `--tag v1` 会被 npm 直接拒绝）。显式 latest 再被拒时，退化为
 > "发到临时 `pending` tag + `npm dist-tag add … latest`"。
 
 > ⚠️ 两个已踩过的坑，改这个 workflow 时别改回去：
