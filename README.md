@@ -31,6 +31,8 @@ DSH 的「技能」是带 YAML frontmatter 的 Markdown 文件，是代理可复
 
 它不改变 DSH 的技能加载机制——它管理技能在磁盘上的组织方式，让 DSH 原生引擎读到的正是你想要的集合。
 
+> **v2.0 里程碑（dsh 0.2 世代首发，取代 4.x 编号线）**：编号约定改为「插件大版本 = 它服务的 dsh 代际」——`2.x` 服务 dsh `0.2.x`，`1.x` 服务 dsh `0.1.x`（`1.3.5` = 旧 `4.3.5` 的同内容重编号），旧 `4.x` 已弃用。代码侧适配 dsh 0.2 的三处非兼容变更：① **预设层改走作用域 API** —— `agentPresets.resolvedRoots` 与磁盘预设目录在 0.2 均已消失，改为 `agentPresets.acquireScope(id)` + `ctx.skills.list({ scope })` 读取每个预设自己的技能层，并扣掉「环境目录 + 多预设共有」的部分，只保留该 preset 真正新增的贡献（租约在 finally 释放）；② **webServer 改为晚挂载懒注册** —— 0.2 里 `dsh-host-webserver` 在插件行 apply 之后才挂载，旧的 `apply` 期读一次 `ctx.webServer` 会静默不注册路由，现在走 `ctx.inject(['webServer'], cb)` 且注册成功会留一行 info 日志；③ **补齐世代声明** —— 新增 `@deepseek-ai/dsh-*` 的 `peerDependencies`（`>=0.2.0-rc.2 <0.3.0`），并新增清单级护栏 `test/manifest-compat.test.mjs`（17 项）拦住这些**静默失败**；④ 另修两处同源静默缺陷 —— 路由析构改用 `ctx.effect`（0.2 没有 `dispose` 事件，旧写法让 disposer 永不执行，重载时 `duplicate route` 会直接炸掉插件）、客户端"当前会话"改用官方口径推导（0.2 的会话快照没有 `current` 字段，旧读法让面板恒无当前工作区）；⑤ 修掉会话层一处写死缺陷 —— `/view` 回传的是「已保存的 cwd」而不是**生效的工作区**，未写过插件状态的会话因此拿到空 cwd，会话页的逐个勾选与「回到跟随工作区」全部以 `cwd 必须为工作区绝对路径` 失败（表现就是"点了完全没反应"）；现在服务端改用会话的**持久化 header**（`sessionPersistence.stat`，不取写所有权、与内存状态无关）解析工作区——`ctx.sessions` 是**按进程独立**的内存存储，而"只是打开一个会话"并不会把它放进去，所以旧写法在 test/desktop 任一实例里都会把这个会话解析成空工作区；同时客户端不再上传空 cwd，勾选里出现技能库之外的名字时会**明确列出**而不是静默丢弃。详见 [docs/VERSIONING.md](docs/VERSIONING.md) 与 [docs/RELEASE.md](docs/RELEASE.md)。
+>
 > **v4.3 里程碑**：浏览器信任围栏——面板 API（`/skill-manager/api/*`）接入与 dsh 官方 `/api` 一致的 confused-deputy 防线（`isTrustedPanelRequest`）：Host 必须为 loopback（localhost / 127/8 / [::1]，防 DNS rebinding）、`sec-fetch-site: cross-site` 一律 403（防 CSRF）、带 Origin 时须同源；测试 203 条。此围栏镜像 `dsh-client-connection` 的 `isTrustedApiRequest`（官方 RPC 通道内置，插件自建路由需自行复制），纯头判定、无额外依赖。
 >
 > **v4.2 里程碑**：引擎视角校验——`/view` 经原生 `ctx.skills.list({ cwd })` 查询引擎实际加载的技能集，工作区/会话面板对「工作区白名单已启用但引擎未加载（missing）」「同名被其他来源覆盖（shadowed）」的技能标红色角标（悬停显示原因）；配套 host 纯函数 `engineLoadState`/`collectEngineLoaded`；测试 190 条。原生 skills 接口仅作只读校验，磁盘白名单主链路保持不变。
@@ -43,12 +45,23 @@ DSH 的「技能」是带 YAML frontmatter 的 Markdown 文件，是代理可复
 
 ## 安装
 
-两种方式任选其一（npm 包已发布，拉取即用、免构建授权）：
+**先选世代**：插件大版本 = 它服务的 dsh 代际。
+
+| 你的 dsh | 装哪个 | 命令 |
+|---|---|---|
+| `0.2.x`（当前，桌面版 DeepSeek Harness） | **2.x** | `dsh plugin --profile web add @yanglaofish/dsh-skill-manager@^2.0.0` |
+| `0.1.x`（旧内核） | `1.x` | `dsh plugin --profile web add @yanglaofish/dsh-skill-manager@^1.0.0` |
+
+> 从旧编号升级：历史 `4.x` 线已弃用（`npm deprecate`），它的最后版本是 `4.3.5`，等价于 `1.3.5`。
+> 由 `4.x` 换到 `2.x` 需要**显式改范围**——`^4.3.5` 不会自动升到 `2.0.0`（semver 上 2.0.0 更小），
+> 这正是"代际对齐"的代价，也是我们刻意接受的：版本号能直接读出可装的内核。
+
+两种安装方式任选其一（npm 包已发布，拉取即用、免构建授权）：
 
 **方式 A：npm 安装（推荐）**
 
 ```sh
-dsh plugin --profile web add @yanglaofish/dsh-skill-manager
+dsh plugin --profile web add @yanglaofish/dsh-skill-manager@^2.0.0
 ```
 
 **方式 B：GitHub 源安装**
@@ -84,7 +97,7 @@ agent 会调用 `skill_manager_*` 工具（共 13 个）完成操作。其他插
 ## 卸载
 
 ```sh
-dsh plugin --profile web remove dsh-skill-manager
+dsh plugin --profile web remove @yanglaofish/dsh-skill-manager
 ```
 
 ## 技术方案
@@ -101,8 +114,9 @@ dsh-skill-manager
 │   │   │                      安全门禁（isValidIdentifier/isAbsolutePath/
 │   │   │                      samePath/assertRegisteredWorkspace）
 │   │   └── apply()            装配 13 个 skill_manager_* 工具 + HTTP 路由
+│   │                          （webServer 晚挂载，走 ctx.inject 懒注册）
 │   │                          + skillManager 宿主服务门面 + sessions/
-│   │                          agentPresets 注入解析
+│   │                          agentPresets 注入解析 + 预设层作用域读取
 │   └── client.js              客户端 bundle（__ModuleLoader__ 包装）
 │       ├── SkillManagerPanel    设置页：统计条 + 双 tab + 搜索 + 分页 + 详情模态
 │       ├── WorkspaceSkillsPanel 工作区/会话技能面板
@@ -110,10 +124,14 @@ dsh-skill-manager
 │       └── SkillRow             三处共用的统一技能行组件
 ├── cordis.patch.yml          bundle patch：挂载宿主侧插件行
 ├── test/
-│   ├── unit.mjs              165 条隔离单测（临时 DSH_HOME，含错误边界）
+│   ├── unit.mjs              219 条隔离单测（临时 DSH_HOME，含错误边界）
+│   ├── manifest-compat.test.mjs  世代护栏：peer 范围 / 客户端 inject / 晚挂载 webServer / 预设作用域
 │   └── seed-sample.mjs       示例技能写入工具（开发验证用）
+├── docs/
+│   ├── VERSIONING.md         版本约定：插件大版本 = 它服务的 dsh 代际
+│   └── RELEASE.md            发布手册：test profile → tag → CI → 淘宝强制同步 → web → desktop
 ├── README.md / README-en.md
-└── package.json              bundle 清单：exports + dsh.client 声明（v4.1.0）
+└── package.json              bundle 清单：exports + dsh.client + dsh peer 世代声明
 ```
 
 **核心设计原则**：技能的状态只有单一事实源 —— 磁盘上的目录结构。技能存放在技能库（`~/.dsh/skill-manager/library/`，引擎不扫描），工作区启用是 `<项目根>/.dsh/skills` 里的白名单（引擎唯一可见源），会话勾选在独立 JSON；所有界面与工具都读取同一份磁盘事实，不存在内存态与磁盘态的分叉。项目根与 dsh 引擎一致 —— 从会话 cwd 向上找最近的 `.git` 所在目录（`dsh-skill-filesystem.findProjectRoot`），找不到就回落为 cwd：子目录工作区的启用会正确落在仓库根，旧版建在 `<cwd>/.dsh/skills` 的链接会自动合并迁移过去。
@@ -129,7 +147,14 @@ dsh-skill-manager
                          所有用户技能平铺于此；不做启用/停用
 ```
 
-**关键语义**：技能库不是「全局启用」——库中的技能对任何工作区都不可见，直到某个工作区把它勾选进 `<项目根>/.dsh/skills`（白名单）。这避免了旧模型「全局启用了但项目不想开」的冲突：启用与否完全由每个项目自己决定。dsh 引擎只扫描项目根的 `.dsh/skills`（project-dsh 根）与 preset，技能库位于 `~/.dsh/skill-manager/` 下不被引擎发现，天然实现白名单。
+**关键语义**：技能库不是「全局启用」——库中的技能对任何工作区都不可见，直到某个工作区把它勾选进 `<项目根>/.dsh/skills`（白名单）。这避免了旧模型「全局启用了但项目不想开」的冲突：启用与否完全由每个项目自己决定。技能库位于 `~/.dsh/skill-manager/` 下，不在任何被扫描的磁盘根里（dsh 0.2 的 `dsh-skill-filesystem` 只扫项目根 `.dsh/skills` / `.agents/skills`、`customSkillDirs` 与用户根），天然实现白名单。第三层「预设」由 dsh 引擎自己贡献，见下。
+
+**预设层在 dsh 0.2 的口径**：预设不再是磁盘目录，而是 `@deepseek-ai/dsh-agent-preset` 加载器行——它把自己的 `plugins`（其中可能挂载 `dsh-skill-filesystem` + `customSkillDirs`）挂进该预设**自己的作用域**。因此本插件这样做：
+
+1. `agentPresets.list()` 拿到预设清单（live 的 `name`/`order` 优先，`standard` / `ptc` / `minimal` / `cordis` 的 id 表只作兜底）；
+2. 对每个预设 `acquireScope(id)` 取一个 **引用租约**（`dsh-agent-preset-registry` 的 `retain` 只做计数，不是重新挂载；未知/损坏的预设会抛，直接跳过），用它的 `key` 作 `ctx.skills.list({ scope })` 的 `scope`，**用完必须在 finally 里 `Symbol.asyncDispose`** 释放，否则该代际永不回收；
+3. 扣掉「宿主层（bundled/runtime 内建注册）」与「出现在 ≥2 个预设里的技能」——项目/用户磁盘技能在每个预设作用域里都能看到，不扣掉就会把同一批用户技能按预设数重复列一遍；
+4. 剩下的才是该 preset 真正新增的贡献（例如创造模式经 `customSkillDirs` 挂载的 `cordis-plugin-development` 等捆绑技能），只读展示。
 
 ### 关键模块
 
@@ -140,7 +165,7 @@ dsh-skill-manager
 | `importSkillDocs / importSkillZipFromBuffer` | 文件夹批量导入 / zip 包导入，逐项校验、部分失败不中断 |
 | `linkGlobalSkillToWorkspace / unlink…` | 工作区启用/停用：目录级 symlink 优先，失败降级整目录复制（fs.cp） |
 | `readSessionConfig / setSessionSkills` | 会话勾选读写：显式子集（库全集自由勾选）与跟随工作区 |
-| `scanPresetSkills` | 经 `agent-presets` 服务读取 preset 内物理捆绑的技能 |
+| `scanPresetSkills` | 预设层读取：`apply()` 装入 0.2 版本的作用域 provider（`agentPresets.acquireScope` + `ctx.skills.list({scope})` + 扣减宿主/共有技能），未运行 `apply()` 或旧内核时回退到 0.1 的磁盘预设目录扫描 |
 | `normalizeParameters / registerTool` | 工具参数规范化为标准 JSON Schema（等价 defineTool） |
 | `isValidIdentifier / isAbsolutePath / samePath / assertRegisteredWorkspace` | 安全门禁：标识符白名单、平台无关绝对路径、大小写不敏感路径比较、写操作仅限已登记工作区 |
 | `SkillManagerPanel / WorkspaceSkillsPanel / SkillDetailModal / SkillRow` | 设置页与会话页 UI、统一行组件、详情模态、分页与排序 |
@@ -176,23 +201,36 @@ Client 勾选技能即固定显式子集（`explicit=true`）：宿主允许库�
 - **工具 schema**：裸 `parameters` 映射（`{key: spec}`）在模型投影时被当作 JSON Schema 读取，`type` 为 null 直接报错。`registerTool` 统一规范化为 `{type:'object', properties, required}`（与 `defineTool` 输出等价），13 个工具全部通过校验。
 - **宿主服务门面**（v4.0）：`ctx.provide('skillManager', …)` 暴露 17 个方法的编程接口，其他插件 `inject: ['skillManager']` 即用，无需走 HTTP 或模型工具。
 - **复用 dsh 渲染器**：Markdown 预览 `require` 种子模块 `@deepseek-ai/dsh-client-ui-primitives` 取用官方 `MarkdownText`（KaTeX 数学 + 代码高亮 + 表格），不内置任何 markdown 库。
-- **preset 根解析**：bundle 以 junction 方式安装时，`import.meta.dirname` 指向工作区，基于模块相对路径的 preset 发现会失效——改从 `agent-presets` 服务的 `resolvedRoots` 读取权威根。
+- **预设层读取（v2.0 改写）**：dsh 0.1 把 preset 放在磁盘目录里（`agent-presets` 服务的 `resolvedRoots`），bundle 以 junction 安装时基于 `import.meta.dirname` 的相对发现会失效，所以旧版从服务拿权威根。dsh 0.2 两者都没了（`resolvedRoots` 全库 0 命中、不再有 preset 目录，且注册表明确"不扫描目录、不接受 preset 路径"），改为**作用域读取**：`agentPresets.acquireScope(id)` → `ctx.skills.list({ scope })`，用完在 finally 里 `Symbol.asyncDispose` 释放租约。
+- **webServer 晚挂载（v2.0）**：`dsh-host-webserver` 在插件行 apply **之后**才挂载，`apply` 期读一次 `ctx.webServer` 会静默不注册路由。改为 `ctx.inject(['webServer'], cb)`（服务已存在则立即执行，后到则稍后执行），并用 `panelApiRegistered` 保证只注册一次。
+- **析构必须走 `ctx.effect`（v2.0）**：dsh 0.2 **没有** `dispose` 事件（全库 0 命中，cordis 的卸载通知是内部事件 `internal/plugin`），旧的 `ctx.on('dispose', …)` 永不执行。这不只是泄漏——`webServer.register` 对同一 `(kind, path)` 重复注册会**抛错**，所以插件第一次重载/重启用就会在 `apply` 里炸掉整个插件。现在路由 disposer 注册为 `ctx.effect(() => unregisterRoute, label)`。
+- **当前会话推导（v2.0）**：客户端 `sessions.list` 快照在 0.2 是 `{ids, byId, phase, projectionsBySession}`，**没有 `current`**；旧读法让"当前会话"恒为空，面板的工作区下拉总是定位不到。改为官方口径：`byId` 里被主视图 retain 的那一行（`retainedBy.mainView > 0`）。
+- **引擎可见性查询要带 scope（v2.0）**：dsh 0.2 把技能目录按 scope 分层，而基础 host `skill-filesystem` 行在本组合里是 `disabled`（本地发现归 preset 所有），因此无 scope 的 `ctx.skills.list({cwd})` **只看得到 runtime/bundled**，"工作区白名单是否真被引擎加载"的角标永远点不亮。改为先解析活体 Agent 的 preset 作用域服务（`agents.get(sessionId)` → `agentPresets.serviceFor(agent, 'skills')`），拿不到再退回全局注册表。
 - **无构建步骤**：宿主侧与客户端侧都是纯 JS，客户端 bundle 手写 `react.createElement`，不依赖 JSX/TS/打包器，安装即用。
 
 ## 开发
 
 ```sh
-# 语法检查
-node --check lib/index.js lib/client.js
-
-# 运行 165 条隔离单测（临时 DSH_HOME，不污染真实环境）
-node test/unit.mjs
+npm test          # = 下面两步；两者都必须绿
+node test/unit.mjs                      # 219 条隔离单测（临时 DSH_HOME，不污染真实环境）
+node --test test/manifest-compat.test.mjs   # 17 条运行时世代 / 装配护栏
 ```
 
+`test/manifest-compat.test.mjs` 拦的是**单测抓不到**的那一类问题——它们全都是"静默失败"：
+peer 范围不满足时 dsh 会整包跳过插件、`webServer` 写进顶层 inject 会让插件在无 web 服务的
+composition 里永久 pending、`ctx.on('dispose')` 在 0.2 里根本不存在（导致重载时 `duplicate route`
+抛错）、`resolvedRoots` 已消失、客户端快照没有 `current` 字段。改 peer / inject / 客户端半边 /
+预设层之后，**先跑绿再重启**。
+
 - 所有文件操作均为模块级函数，无需真实运行环境即可单测；`apply()` 只在装配阶段工作。
-- **GitHub 安装模式下**：改代码需 `git push` 后执行 `pnpm update dsh-skill-manager` 再重启 `dsh web` 生效。
-- **npm 安装模式下**：改代码需 `npm version patch`（或手动 bump）→ `npm publish` 后，profile 内执行 `pnpm add @yanglaofish/dsh-skill-manager@最新版` 再重启 `dsh web` 生效。
-- **本地开发模式**（改代码重启即生效）：`dsh plugin --profile web add .` 或手动 link 依赖。
+  `manifest-compat` 用假 ctx 真跑一次 `apply()`：注册路由、重放注入、跑掉 `ctx.effect` 的
+  disposer、并调用 `/skill-manager/api/view` 验证会话作用域解析。
+- **本地开发模式**（改代码重启即生效）：`test` profile 已用 `link:` 指向本目录，改完重启即可。
+- **发布**：`git tag vX.Y.Z && git push origin vX.Y.Z` → GitHub Actions 自动跑测试、发布 npm、
+  并主动强制同步淘宝源。完整步骤（含 web / desktop 两个 profile 的更新方式）见
+  [docs/RELEASE.md](docs/RELEASE.md)；版本号怎么定见 [docs/VERSIONING.md](docs/VERSIONING.md)。
+- **人工发布兜底**：`npm version patch`（或手改）→ `npm publish` → 再补 tag（CI 的发布步骤是幂等的，
+  版本已存在会跳过而不是失败）。
 
 ## 许可
 
