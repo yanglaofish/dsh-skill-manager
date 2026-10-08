@@ -46,6 +46,8 @@ jobs:
       - name: Install dependencies (unit tests need adm-zip + yaml)
         run: npm install --no-audit --no-fund --legacy-peer-deps
 
+      # 把"走了哪条认证路径"写成 annotation：step 日志要登录才能看，而认证路径是
+      # 排查发布失败的第一信息（`::notice::` 用公开 API 就能读到）。
       - name: Configure npm auth (NPM if set, else OIDC)
         shell: bash
         env:
@@ -53,20 +55,40 @@ jobs:
         run: |
           if [ -n "$NPM_TOKEN_FROM_SECRET" ]; then
             echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN_FROM_SECRET}" > "$HOME/.npmrc"
-            echo "auth: NPM secret"
+            echo "::notice title=npm auth::using repository secret NPM (token length ${#NPM_TOKEN_FROM_SECRET})"
           else
-            echo "auth: OIDC trusted publishing (npmjs Trusted Publishers must be configured)"
+            echo "::notice title=npm auth::repository secret NPM is NOT set — falling back to OIDC trusted publishing, which requires npmjs Trusted Publishers to be configured for this repository"
           fi
 
       - name: Syntax check
         run: node --check lib/index.js && node --check lib/client.js
 
+      # 单测必须两端都能跑：开发在 Windows，runner 是 Linux。失败时把尾部输出写成
+      # `::error::` annotation —— step 日志要登录 GitHub 才能下载，而 annotation 通过
+      # 公开 API 就能读（/check-runs/{id}/annotations），这样"CI 红了但看不到原因"
+      # 不会再发生第二次。
       - name: Unit tests
         shell: bash
         run: |
-          node test/unit.mjs
+          STATUS=0
+          node test/unit.mjs > /tmp/unit.log 2>&1 || STATUS=$?
+          if [ "$STATUS" != "0" ]; then
+            node -e '
+              const fs = require("node:fs");
+              let text = "";
+              try { text = fs.readFileSync("/tmp/unit.log", "utf8") } catch {}
+              const lines = String(text).split("\n");
+              const bad = lines.filter((l) => /❌|Error|error|throw|not ok/.test(l));
+              const tail = (bad.length ? bad : lines).slice(-40).join("\n");
+              console.log("::error title=unit tests failed on the runner::" + tail.replace(/%/g, "%25").replace(/\r/g, "").replace(/\n/g, "%0A"));
+            '
+            echo "--- last 40 lines of node test/unit.mjs ---"
+            tail -40 /tmp/unit.log
+            exit 1
+          fi
+          tail -3 /tmp/unit.log
           # 清单级世代护栏是 2.x 才有的：1.3.5 是 dsh 0.1 世代的收尾重编号版，
-          # 那时还不存在这个文件。条件执行让 v1.3.5 与 v2.0.0 两个 tag 都能绿。
+          # 那时还不存在这个文件。条件执行让两个 tag 都能跑。
           if [ -f test/manifest-compat.test.mjs ]; then
             node --test test/manifest-compat.test.mjs
           fi
@@ -78,15 +100,63 @@ jobs:
         run: |
           set -uo pipefail
           VER="$(node -p "require('./package.json').version")"
+          PKG='@yanglaofish/dsh-skill-manager'
           echo "manifest version = ${VER}"
-          if npm view "@yanglaofish/dsh-skill-manager@${VER}" version --registry=https://registry.npmjs.org >/dev/null 2>&1; then
+          if npm view "${PKG}@${VER}" version --registry=https://registry.npmjs.org >/dev/null 2>&1; then
             echo "version ${VER} is already on npmjs — skipping publish (a re-run is a no-op, not a failure)"
-          else
-            npm publish --registry=https://registry.npmjs.org --access=public
+            exit 0
           fi
 
+          # npm 拒绝给"低于当前 latest"的版本**隐式**打 latest：
+          #   Cannot implicitly apply the "latest" tag because previously published
+          #   version 4.3.5 is higher than the new version 2.0.1.
+          # 而本插件的版本号是「代际对齐」的（2.x 服务 dsh 0.2.x，数字上低于旧的 4.x 线），
+          # 所以必须**显式**指定 tag：
+          #   * 当前世代（major >= 2）必须接管 latest —— 否则 `npm i <pkg>` 仍会装到旧的
+          #     4.x 代码（4.3.5 是坏的那一版）。显式 --tag latest 不做高低检查。
+          #   * 历史世代线（major = 1，服务 dsh 0.1.x）数字同样更低，但它不该抢 latest，
+          #     发到自己的 `v1` tag 即可 —— `npm i <pkg>@1` 依然可用。
+          MAJOR="${VER%%.*}"
+          if [ "$MAJOR" = "1" ]; then
+            PRIMARY_TAG="v1"
+          else
+            PRIMARY_TAG="latest"
+          fi
+          echo "publishing ${VER} with --tag ${PRIMARY_TAG}"
+
+          STATUS=0
+          npm publish --registry=https://registry.npmjs.org --access=public --tag "${PRIMARY_TAG}" > /tmp/pub.log 2>&1 || STATUS=$?
+          if [ "$STATUS" != "0" ] && [ "$PRIMARY_TAG" = "latest" ]; then
+            # 兜底：万一连显式 --tag latest 也被拒，就先发到临时 tag 再把 latest 指过去。
+            echo "explicit --tag latest was refused — retrying via a temporary tag, then moving latest"
+            tail -5 /tmp/pub.log
+            STATUS=0
+            npm publish --registry=https://registry.npmjs.org --access=public --tag pending > /tmp/pub.log 2>&1 || STATUS=$?
+            if [ "$STATUS" = "0" ]; then
+              npm dist-tag add "${PKG}@${VER}" latest >> /tmp/pub.log 2>&1 || STATUS=$?
+            fi
+          fi
+          echo "npm publish exit=${STATUS}"
+          tail -30 /tmp/pub.log
+          if [ "$STATUS" != "0" ]; then
+            node -e '
+              const fs = require("node:fs");
+              let text = "";
+              try { text = fs.readFileSync("/tmp/pub.log", "utf8") } catch {}
+              const tail = String(text).split("\n").slice(-25).join("\n");
+              console.log("::error title=npm publish failed::" + tail.replace(/%/g, "%25").replace(/\r/g, "").replace(/\n/g, "%0A"));
+            '
+            exit 1
+          fi
+          echo "::notice title=npm publish::published ${VER} to npmjs with tag ${PRIMARY_TAG}"
+          npm view "${PKG}" dist-tags --registry=https://registry.npmjs.org || true
+
       # 用户铁律（dsh-proxy-pro LESSONS §28）：publish 成功后不许干等，必须主动循环
-      # 触发淘宝源同步，直到 npmmirror 的 dist-tags.latest 等于本次版本。
+      # 触发淘宝源同步，直到 npmmirror 上**这个版本可取到**。
+      #
+      # 判据是"该版本出现在 versions 里"，不是 dist-tags.latest：代际对齐编号下，历史
+      # 世代线（1.x）永远不会成为 latest（latest 属于当前世代 2.x），拿 latest 比对
+      # 会让 1.x 的发布必然在 60 轮后判失败。
       #
       # 两个已踩过的坑：
       #  1) 端点：npmmirror 的同步 API 用 QUERY 参数收包名 ——
@@ -95,7 +165,7 @@ jobs:
       #     吞掉，看起来"同步过了"，其实一直靠懒同步兜底。
       #  2) 只 PUT 一次不够：PUT 返回 201 只是入队确认，不等于同步完成。实测要
       #     11~33 轮（2~4 分钟）才拉到，所以这里每轮先重发再轮询（LESSONS §28）。
-      - name: Taobao mirror — active sync + poll dist-tags.latest
+      - name: Taobao mirror — active sync + poll until this version resolves
         shell: bash
         run: |
           set -uo pipefail
@@ -103,21 +173,24 @@ jobs:
           VER="${REF#v}"
           ENC='%40yanglaofish%2Fdsh-skill-manager'
           echo "target=${VER}"
-          LATEST=''
+          STATE=''
           for i in $(seq 1 60); do
             curl -sS -X PUT "https://registry.npmmirror.com/-/sync?name=${ENC}" \
               -H 'content-type: application/json' -d "{\"version\":\"${VER}\"}" \
               -o /tmp/sync.json -w "trigger ${i}: http=%{http_code}\n" || true
-            LATEST=$(curl -sS "https://registry.npmmirror.com/${ENC}" \
-              | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{console.log(JSON.parse(d)['dist-tags']?.latest||'')}catch{console.log('')}})" 2>/dev/null || echo '')
-            echo "poll ${i}: tb latest=${LATEST} (want ${VER})"
-            if [ "${LATEST}" = "${VER}" ]; then
-              echo "SYNCED: ${LATEST}"
-              exit 0
-            fi
+            # 用环境变量传版本号（`node -e` 的 argv 下标易错，见 dsh-proxy-pro LESSONS §29）
+            STATE=$(curl -sS "https://registry.npmmirror.com/${ENC}" \
+              | TARGET_VERSION="${VER}" node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const j=JSON.parse(d);const has=Object.prototype.hasOwnProperty.call(j.versions||{},process.env.TARGET_VERSION);console.log((has?'VERSION_OK ':'MISSING ')+(j['dist-tags']?.latest||''))}catch{console.log('UNREADABLE ')}})" 2>/dev/null || echo 'UNREADABLE ')
+            echo "poll ${i}: tb state=${STATE} (want version ${VER})"
+            case "${STATE}" in
+              VERSION_OK*)
+                echo "SYNCED: ${VER} is resolvable on npmmirror"
+                exit 0
+                ;;
+            esac
             sleep 8
           done
-          echo "::error::淘宝源 8 分钟内没同步到 ${VER}。若 npmjs 侧走的是 staged publishing（202），请先在 npmjs 网页做 2FA 批准或用 npm stage approve，然后重跑本 job。"
+          echo "::error::淘宝源 8 分钟内没能取到 ${VER}。若 npmjs 侧走的是 staged publishing（202），请先在 npmjs 网页做 2FA 批准或用 npm stage approve，然后重跑本 job。"
           exit 1
 
       - name: Report dist-tags afterwards

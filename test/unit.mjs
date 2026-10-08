@@ -1,6 +1,6 @@
 // dsh-skill-manager — core logic unit tests.
 // Run: node test/unit.mjs
-import { mkdtemp, mkdir, writeFile, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import AdmZip from 'adm-zip';
@@ -632,6 +632,32 @@ console.log('error boundaries');
   ok(!scan1.some((s) => s.name === 'not-a-skill') && !scan1.some((s) => s.name === 'stray'), 'scanDir 忽略无 SKILL.md 目录与单文件');
   await rm(join(skillsRoot(), 'not-a-skill'), { recursive: true, force: true });
   await rm(join(skillsRoot(), 'stray.md'), { force: true });
+
+  // scanDir must follow symlinks/junctions. On Linux/macOS a workspace link IS a
+  // symlink, and `Dirent.isDirectory()` is false for it — judging by the dirent
+  // alone hid every enabled skill on those platforms (Windows only looked fine
+  // because it degrades to a copied real directory). This is the exact assertion
+  // the Linux CI runner caught.
+  const linkRoot = join(home, 'linkroot');
+  await mkdir(linkRoot, { recursive: true });
+  // source lives directly under the temp DSH_HOME, NOT under skillsRoot(): the
+  // library set is asserted on later, so seeding it here would skew those counts
+  const linkSrc = join(home, 'link-src-skill');
+  await mkdir(linkSrc, { recursive: true });
+  await writeFile(join(linkSrc, 'SKILL.md'), '---\nname: link-src-skill\ndescription: 链接源\n---\n正文\n');
+  let linkMade = true;
+  try {
+    // 'junction' works for unprivileged Windows; POSIX wants 'dir' (and ignores it)
+    await symlink(linkSrc, join(linkRoot, 'link-src-skill'), process.platform === 'win32' ? 'junction' : 'dir');
+  } catch {
+    linkMade = false;
+  }
+  if (linkMade) {
+    const viaLink = await scanDir(linkRoot);
+    ok(viaLink.some((s) => s.name === 'link-src-skill'), 'scanDir 跟随符号链接/junction（Linux/macOS 的工作区 link 形态）');
+  } else {
+    console.log('   (跳过符号链接断言：本机权限不允许创建链接)');
+  }
 
   // readSkillFile / writeSkillFile path-escape guards
   const esc1 = await readSkillFile('my-skill', '../outside.md');
