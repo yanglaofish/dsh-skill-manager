@@ -1,6 +1,60 @@
 # dsh-skill-manager
 
-一个 DeepSeek Harness（DSH）插件：为 DSH 代理的**技能**提供完整的管理平面——统一查看、编辑、导入、管理，并按照「技能库 / 工作区 / 会话」三层模型精细控制每个技能在何时何地生效。**技能库只存技能，启用跟着项目走**：技能放进库中不会自动生效，只有某个工作区勾选启用后，该工作区（及其会话）才看得到它。
+一个 DeepSeek Harness（DSH）插件：统一查看、编辑、导入和管理技能，按照「技能库 / 工作区 / 会话」三层控制技能生效范围。技能放进库中不会自动启用；工作区选择提供会话默认值，会话也可以从库中独立勾选自己的技能集合。
+
+## 2.1.0 更新
+
+本节描述 2.1.0；下面的里程碑记录描述各历史版本。
+
+- **双入口管理**：DSH 0.2 原生侧栏增加“技能库”，默认双栏卡片；设置里的“技能管理”保留紧凑列表。
+  两处复用同一个管理组件与操作逻辑，导入、删除、编辑、搜索和工作区配置保持一致。
+  当前客户端内成功写入后自动刷新其他已打开面板；重新进入页面也会读取最新数据。
+  侧栏依赖原生 `main` / `sidebar.panellist` 槽，宿主未提供时仍保留设置与会话入口。
+  自适应布局随容器宽度收拢列数，颜色跟随 DSH 主题。会话里的“技能”勾选入口继续保留。
+- **Markdown 草稿预览**：技能详情的 Markdown 编辑区可切换“源码 / 预览”，预览当前未保存内容；
+  切换不保存、不改写 frontmatter，保存与取消仍由原按钮控制。复用 DSH 的 MarkdownText，
+  兼容桌面版的 memo 组件导出；普通脚本和缺少渲染组件时继续使用源码编辑。
+- **会话选择真实生效**：显式勾选从技能库或工作区选择，作用于当前 agent 的原生技能 provider。
+  模型实际收到的目录、`skill` 工具和 `/技能名` 的直接调用遵守同一份选择；取消后禁止后续加载，
+  不会撤回已经写入会话历史的技能正文。“回到跟随”恢复原生工作区行为，预设保持只读，
+  技能自身的 `disable-model-invocation` / `user-invocable` 限制仍有效。
+- **隔离与更新**：同工作区的会话互不影响；同一 DSH_HOME 的 profile 共享库和工作区，
+  会话选择保存到 `skill-manager/sessions/profiles/<profile标识哈希>/`。
+  旧全局会话 JSON 兼容读取，首次修改保存到当前 profile。界面保存后通知目录失效，
+  每次模型执行前再刷新，覆盖另一个进程修改后的状态；重启、插件重载后仍读取保存的选择。
+- **文件保护**：文件浏览与编辑拒绝目录之外的绝对路径和链接目标。
+  导入在扫描范围外的同盘临时目录完整写入成功后才替换；非法附件、损坏 ZIP 或中途写入失败保留旧版本。
+  同名不同内容的收纳来源保留并报告冲突，删除库技能不删除其他工具的独立来源。
+- **并发**：共享数据变更用跨进程写锁串行化；JSON 经临时文件原子替换，损坏的工作区登记
+  文件报错，不能被当成空表覆盖。不同端口的管理页面不能跨 profile 写入。
+
+DSH 0.2 内置的 `/` 技能提示独立缓存技能目录，且在会话尚未启动 Agent 时按预设作用域读取；
+会话勾选后，这份提示可能暂时与实际执行目录不一致。插件已验证下一次模型执行、`skill` 工具和
+直接 `/技能名` 调用均按会话选择生效；提示列表的即时同步仍需 DSH 内核提供刷新事件及冷会话查询支持。
+
+### 备份与恢复
+
+覆盖、移除和旧格式迁移在原目录同级的隐藏 `.skm-backups/` 中保留原版本，接口返回
+`backupPath`（库删除界面会显示）。恢复前停止相关 profile 的写入，将当前同名目录另行备份，
+再把备份项移回原父目录并恢复原名称。备份不会自动清理；应确认新版本可用后再清理。
+进程意外退出可能留下 `skill-manager/.write.lock`，其中记录 PID；确认该进程已经退出后
+才能移除锁文件。锁不会按超时时间强制抢占仍活跃的写入。
+
+Windows 无法创建符号链接时仍回退到工作区副本；副本不是自动同步目录。
+工作区存在不同内容时再次启用会报告冲突，避免覆盖项目独立修改。
+
+### 本地验证
+
+使用 Node.js 24 执行 `npm test`。测试同时隔离 DSH_HOME、DSH_AGENTS_HOME。
+安装官方 Windows 桌面版时，可验证真实模型目录、原生 skill 工具和作用域生命周期：
+
+```powershell
+node scripts/run-desktop-test.mjs 'E:\Agenttools\deepseek\app' scripts/session-runtime.test.cjs
+node scripts/run-desktop-test.mjs 'E:\Agenttools\deepseek\app' scripts/audit-repro.cjs
+```
+
+两个脚本均在临时目录运行，不修改已安装的 profile。审查复现脚本的缺陷项修复后应为
+`confirmed: false`，会话项另返回 `verified: true`。
 
 ## 界面预览
 
@@ -23,13 +77,13 @@
 DSH 的「技能」是带 YAML frontmatter 的 Markdown 文件，是代理可复用的能力包。技能一多就会散落，难以统一管理。dsh-skill-manager 把这一切收拢成一个管理平面：
 
 - **技能库** — 列出/查看/编辑/导入/删除全部技能（目录形式：文件夹 + SKILL.md）。库只是可用技能池，不负责启用。
-- **工作区技能** — 每个项目独立维护自己的技能集合（跟随项目目录走），**唯一的启用开关**：勾选=该项目启用，未勾选=该项目完全不可见。
+- **工作区技能** — 每个项目独立维护自己的默认技能集合；会话未固定自选时跟随工作区。
 - **会话技能** — 针对当前会话临时勾选，默认跟随工作区，可固定自选（**库全集自由勾选**，不限于工作区启用集）。
 - **跨层搜索** — 名称 / 描述 / 使用场景 / 正文全文匹配，带命中标注。
-- **统一界面** — 设置页双标签页 + 会话页技能面板，三处共用同一套行组件（整行点击切换、启用高亮、停用置灰+描边、预设只读、自动分页）。
+- **统一界面** — 侧栏宽屏版、设置紧凑版与会话技能面板共用管理逻辑，保留导入、编辑、搜索与预设只读能力。
 - **跨插件集成** — 宿主侧提供 `skillManager` 服务门面，其他 Cordis 插件 `inject: ['skillManager']` 即可调用全部能力。
 
-它不改变 DSH 的技能加载机制——它管理技能在磁盘上的组织方式，让 DSH 原生引擎读到的正是你想要的集合。
+插件通过 DSH 原生技能 provider 将会话选择接入模型目录和技能加载工具，并管理技能在磁盘上的组织方式。
 
 > **v2.0 里程碑（dsh 0.2 世代首发，取代 4.x 编号线）**：编号约定改为「插件大版本 = 它服务的 dsh 代际」——`2.x` 服务 dsh `0.2.x`，`1.x` 服务 dsh `0.1.x`（`1.3.5` = 旧 `4.3.5` 的同内容重编号），旧 `4.x` 已弃用。代码侧适配 dsh 0.2 的三处非兼容变更：① **预设层改走作用域 API** —— `agentPresets.resolvedRoots` 与磁盘预设目录在 0.2 均已消失，改为 `agentPresets.acquireScope(id)` + `ctx.skills.list({ scope })` 读取每个预设自己的技能层，并扣掉「环境目录 + 多预设共有」的部分，只保留该 preset 真正新增的贡献（租约在 finally 释放）；② **webServer 改为晚挂载懒注册** —— 0.2 里 `dsh-host-webserver` 在插件行 apply 之后才挂载，旧的 `apply` 期读一次 `ctx.webServer` 会静默不注册路由，现在走 `ctx.inject(['webServer'], cb)` 且注册成功会留一行 info 日志；③ **补齐世代声明** —— 新增 `@deepseek-ai/dsh-*` 的 `peerDependencies`（`>=0.2.0-rc.2 <0.3.0`），并新增清单级护栏 `test/manifest-compat.test.mjs`（17 项）拦住这些**静默失败**；④ 另修两处同源静默缺陷 —— 路由析构改用 `ctx.effect`（0.2 没有 `dispose` 事件，旧写法让 disposer 永不执行，重载时 `duplicate route` 会直接炸掉插件）、客户端"当前会话"改用官方口径推导（0.2 的会话快照没有 `current` 字段，旧读法让面板恒无当前工作区）；⑤ 修掉会话层一处写死缺陷 —— `/view` 回传的是「已保存的 cwd」而不是**生效的工作区**，未写过插件状态的会话因此拿到空 cwd，会话页的逐个勾选与「回到跟随工作区」全部以 `cwd 必须为工作区绝对路径` 失败（表现就是"点了完全没反应"）；现在服务端改用会话的**持久化 header**（`sessionPersistence.stat`，不取写所有权、与内存状态无关）解析工作区——`ctx.sessions` 是**按进程独立**的内存存储，而"只是打开一个会话"并不会把它放进去，所以旧写法在 test/desktop 任一实例里都会把这个会话解析成空工作区；同时客户端不再上传空 cwd，勾选里出现技能库之外的名字时会**明确列出**而不是静默丢弃。详见 [docs/VERSIONING.md](docs/VERSIONING.md) 与 [docs/RELEASE.md](docs/RELEASE.md)。
 >
@@ -49,7 +103,7 @@ DSH 的「技能」是带 YAML frontmatter 的 Markdown 文件，是代理可复
 
 | 你的 dsh | 装哪个 | 命令 |
 |---|---|---|
-| `0.2.x`（当前，桌面版 DeepSeek Harness） | **2.x** | `dsh plugin --profile web add @yanglaofish/dsh-skill-manager@^2.0.1` |
+| `0.2.x`（当前，桌面版 DeepSeek Harness） | **2.x** | `dsh plugin --profile web add @yanglaofish/dsh-skill-manager@^2.1.0` |
 | `0.1.x`（旧内核） | `1.x` | `dsh plugin --profile web add @yanglaofish/dsh-skill-manager@^1.0.0` |
 
 > 从旧编号升级：历史 `4.x` 线已弃用（`npm deprecate`），它的最后版本是 `4.3.5`，等价于 `1.3.5`。
@@ -61,7 +115,7 @@ DSH 的「技能」是带 YAML frontmatter 的 Markdown 文件，是代理可复
 **方式 A：npm 安装（推荐）**
 
 ```sh
-dsh plugin --profile web add @yanglaofish/dsh-skill-manager@^2.0.1
+dsh plugin --profile web add @yanglaofish/dsh-skill-manager@^2.1.0
 ```
 
 **方式 B：GitHub 源安装**

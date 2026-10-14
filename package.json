@@ -1,6 +1,6 @@
 {
   "name": "@yanglaofish/dsh-skill-manager",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "Skill lifecycle manager for DSH 0.2.x: library / workspace / session three-layer skill management, plus the read-only preset layer read through the 0.2 scope API",
   "type": "module",
   "main": "lib/index.js",
@@ -25,9 +25,11 @@
     "yaml": "^2.9.0"
   },
   "scripts": {
-    "test": "node test/unit.mjs && node --test test/manifest-compat.test.mjs"
+    "test": "node test/unit.mjs && node --test test/*.test.mjs"
   },
   "peerDependencies": {
+    "@deepseek-ai/dsh-scope": ">=0.2.0-rc.2 <0.3.0",
+    "@deepseek-ai/dsh-skill-filesystem": ">=0.2.0-rc.2 <0.3.0",
     "@deepseek-ai/cordis": "^4.0.0",
     "@deepseek-ai/dsh-agent-preset-registry": ">=0.2.0-rc.2 <0.3.0",
     "@deepseek-ai/dsh-host-webserver": ">=0.2.0-rc.2 <0.3.0",

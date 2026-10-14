@@ -27,6 +27,8 @@ function ok(cond, label) {
 // isolate DSH_HOME into a temp dir for all fs operations
 const home = await mkdtemp(join(tmpdir(), 'skm-test-'));
 process.env.DSH_HOME = home;
+// 两个用户根都必须全程隔离；收纳操作会移动 agents 根下的技能。
+process.env.DSH_AGENTS_HOME = join(home, 'agents');
 await mkdir(skillsRoot(), { recursive: true });
 console.log(`隔离 DSH_HOME: ${home}`);
 
@@ -170,18 +172,21 @@ Body two`;
       { path: 'SKILL.md', b64: Buffer.from('---\nname: dir-full\ndescription: full dir skill\n---\n# Dir\n\nBody', 'utf8').toString('base64') },
       { path: 'scripts/gen.py', b64: Buffer.from('print("hi")', 'utf8').toString('base64') },
       { path: 'assets/logo.bin', b64: Buffer.from([0, 1, 2, 3]).toString('base64') },
-      { path: '../escape.md', b64: Buffer.from('nope', 'utf8').toString('base64') },
-      { path: '/abs.md', b64: Buffer.from('nope', 'utf8').toString('base64') },
     ],
   }]);
   ok(dirForm.ok === true && dirForm.results[0]?.ok === true, '目录形式导入成功');
-  ok(dirForm.results[0]?.restored === 2, '附属文件还原 2 个（escape/abs 被安全忽略）');
+  ok(dirForm.results[0]?.restored === 2, '附属文件完整还原 2 个');
   ok((await readdir(join(skillsRoot(), 'dir-full', 'scripts'))).includes('gen.py'), 'scripts/gen.py 还原');
   ok((await readdir(join(skillsRoot(), 'dir-full', 'assets'))).includes('logo.bin'), 'assets/logo.bin 二进制还原');
   const dirRaw = await readFile(join(skillsRoot(), 'dir-full', 'assets', 'logo.bin'));
   ok(Buffer.from(dirRaw).equals(Buffer.from([0, 1, 2, 3])), '二进制内容逐字节一致');
-  ok(!(await readdir(join(skillsRoot(), '..'))).includes('escape.md'), '路径穿越未逃逸出技能库');
-  ok(!(await readdir(join(skillsRoot(), 'dir-full'))).includes('abs.md'), '绝对路径条目被忽略');
+  for (const path of ['../escape.md', '/abs.md']) {
+    const invalid = await importSkillDocs([{ files: [
+      { path: 'SKILL.md', b64: Buffer.from('---\nname: dir-full\ndescription: x\n---\n新正文').toString('base64') },
+      { path, b64: Buffer.from('nope').toString('base64') },
+    ] }]);
+    ok(invalid.results[0]?.ok === false, '非法路径整包拒绝：' + path);
+  }
   // directory form: missing SKILL.md → rejected
   const dirNoMd = await importSkillDocs([{ source: 'x', files: [{ path: 'readme.md', b64: Buffer.from('x').toString('base64') }] }]);
   ok(dirNoMd.results[0]?.ok === false, '目录形式缺 SKILL.md 拒绝');
@@ -458,7 +463,7 @@ console.log('migrateLegacySkills');
   // the legacy global root must be emptied — the engine still loads
   // ~/.dsh/skills for every session, so leftover copies would bypass the
   // workspace whitelist (this is why unregistered skills showed up globally)
-  ok((await readdir(legacyRoot)).length === 0 && (await readdir(legacyDisabled)).length === 0, '旧根已清空（引擎不再全局加载）');
+  ok((await readdir(legacyRoot)).every((n) => n.startsWith('.')) && (await readdir(legacyDisabled)).every((n) => n.startsWith('.')), '旧根只保留隐藏备份（引擎不再全局加载）');
   // idempotent
   const r2 = await migrateLegacySkills();
   ok(r2.ok === true, '重复迁移幂等');
@@ -491,15 +496,15 @@ console.log('listUnmanagedSkills / importUnmanagedSkills');
   ok(adopted.ok === true, '收纳执行成功');
   ok(adopted.imported.includes('ghost-a') && adopted.imported.includes('ghost-c'), '未入库技能导入库');
   ok(!adopted.imported.includes('batch-skill-two'), '库 wins：同名不重复导入');
-  ok(adopted.removed.length === 3, '引擎根副本全部移除');
+  ok(adopted.removed.length === 2 && adopted.conflicts.includes('batch-skill-two'), '无冲突源移入备份，独立同名版本保留');
   const libFiles = await readdir(skillsRoot());
   ok(libFiles.includes('ghost-a') && libFiles.includes('ghost-c'), '收纳后库内可扫描');
-  ok((await readdir(userDsh)).length === 0, 'user-dsh 根已清空');
-  ok((await readdir(userAgents)).length === 0, 'user-agents 根已清空');
+  ok((await readdir(userDsh)).filter((n) => !n.startsWith('.')).join() === 'dup-b', 'user-dsh 保留独立同名版本');
+  ok((await readdir(userAgents)).every((n) => n.startsWith('.')), 'user-agents 仅留隐藏备份');
   const again = await importUnmanagedSkills();
   ok(again.imported.length === 0 && again.removed.length === 0, '二次收纳幂等（无残留）');
   await rm(userAgents, { recursive: true, force: true });
-  delete process.env.DSH_AGENTS_HOME;
+  // 后续收纳/删除测试仍然使用隔离目录，不能回退到真实 ~/.agents。
 }
 
 // --- project-level scan: workspace whitelist + project .agents/skills ---
@@ -534,7 +539,7 @@ console.log('scanSkillSources（项目级）');
   ok(r.removed.length === 1 && r.removed[0] === 'agent-only', '仅 move 源移除（agent-only）');
   const wsFiles = (await readdir(join(wsProj, '.dsh', 'skills')));
   ok(wsFiles.includes('local-only') && wsFiles.includes('batch-skill-one'), '工作区白名单副本保留（该工作区保持启用）');
-  ok((await readdir(join(wsProj, '.agents', 'skills'))).length === 0, '项目 agents 源已清空');
+  ok((await readdir(join(wsProj, '.agents', 'skills'))).every((n) => n.startsWith('.')), '项目 agents 源只留隐藏备份');
   const libFiles2 = await readdir(skillsRoot());
   ok(libFiles2.includes('local-only') && libFiles2.includes('agent-only'), '项目级技能纳入库后可扫描');
 }
@@ -740,7 +745,7 @@ console.log('error boundaries');
   await mkdir(sessDir, { recursive: true });
   await writeFile(join(sessDir, 'corrupt.json'), '{not json', 'utf8');
   const cfg = await readSessionConfig('corrupt');
-  ok(cfg.explicit === false && cfg.enabled.length === 0, '损坏会话配置降级为默认值');
+  ok(cfg.explicit === true && cfg.enabled.length === 0 && cfg.error, '损坏会话配置显示错误并暂时关闭可管理技能');
   await writeFile(join(sessDir, 'mixed.json'), JSON.stringify({ explicit: true, enabled: [1, 'ok-name', null, ''] }), 'utf8');
   const cfg2 = await readSessionConfig('mixed');
   ok(cfg2.enabled.join(',') === 'ok-name', '会话 enabled 过滤非字符串');
@@ -795,8 +800,8 @@ console.log('engineLoadState / collectEngineLoaded');
   ok(engineLoadState({ name: 'ghost', layer: 'workspace', sessionEnabled: true }, []) === 'unknown', '空引擎列表 → unknown（不误报 missing）');
   // v4.1 session semantics: a pure session pick (view layer, not in the
   // workspace whitelist) is never judged against the engine catalog
-  ok(engineLoadState({ name: 'picked', layer: 'global', origin: 'user', sessionEnabled: true }, []) === 'off', '纯会话勾选（视图层）不判引擎 → off');
-  ok(engineLoadState({ name: 'picked', layer: 'global', origin: 'user', sessionEnabled: true }, loaded) === 'off', '纯会话勾选即使引擎有同名也 → off');
+  ok(engineLoadState({ name: 'picked', layer: 'global', origin: 'user', sessionEnabled: true }, []) === 'unknown', '会话勾选同样查询引擎可见性');
+  ok(engineLoadState({ name: 'picked', layer: 'global', origin: 'user', sessionEnabled: true }, [{ name: 'picked', provider: 'skill-manager-session' }]) === 'ok', '会话 provider 中的技能显示已加载');
   // collectEngineLoaded: maps native summaries to the compact projection
   const fakeSvc = { list: async ({ cwd }) => cwd === 'C:/proj'
     ? [{ name: 'a', source: 'project-dsh', provider: 'filesystem' }]

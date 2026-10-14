@@ -1,17 +1,19 @@
 # dsh-skill-manager
 
-A DeepSeek Harness (DSH) plugin that provides a complete **management plane for agent skills** — unified listing, viewing, editing, importing, and enable/disable, with fine-grained control over *where and when* each skill takes effect via a three-layer model: **library / workspace / session**. The library only *stores* skills; enablement follows the project — a skill becomes visible to a workspace (and its sessions) only after it is toggled on there.
+A DeepSeek Harness (DSH) plugin for listing, editing, importing, and managing skills across **library / workspace / session** layers. The library stores skills without enabling them; workspace selections provide session defaults, and each session may explicitly choose skills from the library.
+
+Version 2.1.0 adds a sidebar library view, Markdown draft preview, and a native skill provider that makes session selections affect the model catalog, the `skill` tool, and direct `/skill-name` invocation. DSH 0.2 caches its built-in `/` suggestions separately; after a selection changes, those suggestions may temporarily differ from the effective runtime catalog, especially before a session starts an Agent.
 
 DSH "skills" are Markdown files with YAML frontmatter — the reusable capability packages of agents. Once you accumulate many of them, they scatter across the global directory, per-project directories, and even presets, becoming hard to manage. dsh-skill-manager gathers all of that into a single management plane:
 
 - **Global skills** — list / view / edit / import / delete every skill (directory form: folder + SKILL.md). The library is a pure skill pool; it does not decide enablement.
-- **Workspace skills** — each project maintains its own skill set (living in the project directory); **the only enable switch**: checked = enabled there, unchecked = invisible there.
+- **Workspace skills** — each project maintains its own default skill set; sessions follow it unless explicitly pinned.
 - **Session skills** — temporarily toggle skills for the current session; defaults to *follow workspace*, can pin an explicit subset chosen freely from the whole library (not limited to the workspace set).
 - **Cross-layer search** — full-text matching over name / description / whenToUse / body, with hit-field annotations.
-- **Unified UI** — a settings page with two tabs plus a conversation-page skill panel; all three surfaces share the same row component (whole-row click toggles, enabled highlighted, disabled greyed with an outline, presets read-only, automatic pagination).
+- **Unified UI** — a wide sidebar library, compact settings view, and conversation skill panel share management behavior, including import, editing, search, and read-only presets.
 - **Cross-plugin integration** — a host-side `skillManager` service façade; other Cordis plugins can `inject: ['skillManager']` and call every capability.
 
-It does not change how DSH loads skills — it manages how skills are organized on disk, so the native DSH engine reads exactly the set you intend.
+It registers a native DSH skill provider for session selections and manages how skills are organized on disk.
 
 > **v2.0 milestone (first release of the dsh 0.2 generation; supersedes the 4.x numbering)**: the versioning convention is now "the plugin's major version is the dsh generation it serves" — `2.x` serves dsh `0.2.x`, `1.x` serves dsh `0.1.x` (`1.3.5` is the old `4.3.5` renumbered, same content), and the old `4.x` line is deprecated. The code adapts to three breaking changes in dsh 0.2: ① **the preset layer now reads through the scope API** — `agentPresets.resolvedRoots` and on-disk preset directories are both gone in 0.2, so presets are read with `agentPresets.acquireScope(id)` + `ctx.skills.list({ scope })`, subtracting the ambient catalog and anything every preset shares (the lease is released in a `finally`); ② **webServer is mounted late, so the route registers lazily** — 0.2 mounts `dsh-host-webserver` after plugin rows apply, and the old single `ctx.webServer` read during `apply` silently registered nothing; it now goes through `ctx.inject(['webServer'], cb)` and logs one info line on success; ③ **generation declaration added** — `@deepseek-ai/dsh-*` `peerDependencies` (`>=0.2.0-rc.2 <0.3.0`) plus a manifest-level guard, `test/manifest-compat.test.mjs` (17 assertions), that catches these **silent** failures. Two same-family defects were fixed too: teardown now goes through `ctx.effect` (0.2 has no `dispose` event, so the old disposer never ran and the first reload would throw a `duplicate route` inside `apply`), and the client's "current session" read now uses the official derivation (the 0.2 session snapshot has no `current` field). ⑤ A hard-coded defect in the session layer was fixed too — `/view` returned the *saved* cwd instead of the **effective workspace**, so a session that had never written plugin state received an empty cwd and every per-skill toggle plus "back to follow workspace" failed with `cwd must be an absolute workspace path` (which the user sees as "clicking does nothing"); the host now resolves the workspace from the session's **durable header** (`sessionPersistence.stat`, no write ownership, independent of in-memory state) — `ctx.sessions` is a **per-process** in-memory store and merely opening a session does not put it there, so the old read resolved that session to an empty workspace in either the test or the desktop instance; the client no longer posts an empty cwd, and names outside the skill library are now listed explicitly instead of being dropped silently. See [docs/VERSIONING.md](docs/VERSIONING.md) and [docs/RELEASE.md](docs/RELEASE.md).
 >
@@ -25,7 +27,7 @@ It does not change how DSH loads skills — it manages how skills are organized 
 
 | Your dsh | Install | Command |
 |---|---|---|
-| `0.2.x` (current; the DeepSeek Harness desktop app) | **2.x** | `dsh plugin --profile web add @yanglaofish/dsh-skill-manager@^2.0.1` |
+| `0.2.x` (current; the DeepSeek Harness desktop app) | **2.x** | `dsh plugin --profile web add @yanglaofish/dsh-skill-manager@^2.1.0` |
 | `0.1.x` (older kernel) | `1.x` | `dsh plugin --profile web add @yanglaofish/dsh-skill-manager@^1.0.0` |
 
 > Upgrading from the old numbering: the historical `4.x` line is deprecated (`npm deprecate`); its last
@@ -38,7 +40,7 @@ Choose either way (the package is published to npm — prebuilt, no build approv
 **Option A: from npm (recommended)**
 
 ```sh
-dsh plugin --profile web add @yanglaofish/dsh-skill-manager@^2.0.1
+dsh plugin --profile web add @yanglaofish/dsh-skill-manager@^2.1.0
 ```
 
 **Option B: from the GitHub source**

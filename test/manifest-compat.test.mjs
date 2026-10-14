@@ -187,6 +187,7 @@ function seedLibrarySkill(name) {
 
 const HOME = mkdtempSync(path.join(tmpdir(), 'skm-compat-'))
 process.env.DSH_HOME = HOME
+process.env.DSH_AGENTS_HOME = path.join(HOME, 'agents')
 mkdirSync(path.join(HOME, 'skill-manager', 'library'), { recursive: true })
 
 const { apply, setSessionSkills } = await import('../lib/index.js')

@@ -67,11 +67,11 @@ jobs:
       # `::error::` annotation —— step 日志要登录 GitHub 才能下载，而 annotation 通过
       # 公开 API 就能读（/check-runs/{id}/annotations），这样"CI 红了但看不到原因"
       # 不会再发生第二次。
-      - name: Unit tests
+      - name: Full test suite
         shell: bash
         run: |
           STATUS=0
-          node test/unit.mjs > /tmp/unit.log 2>&1 || STATUS=$?
+          npm test > /tmp/unit.log 2>&1 || STATUS=$?
           if [ "$STATUS" != "0" ]; then
             node -e '
               const fs = require("node:fs");
@@ -82,16 +82,11 @@ jobs:
               const tail = (bad.length ? bad : lines).slice(-40).join("\n");
               console.log("::error title=unit tests failed on the runner::" + tail.replace(/%/g, "%25").replace(/\r/g, "").replace(/\n/g, "%0A"));
             '
-            echo "--- last 40 lines of node test/unit.mjs ---"
+            echo "--- last 40 lines of npm test ---"
             tail -40 /tmp/unit.log
             exit 1
           fi
-          tail -3 /tmp/unit.log
-          # 清单级世代护栏是 2.x 才有的：1.3.5 是 dsh 0.1 世代的收尾重编号版，
-          # 那时还不存在这个文件。条件执行让两个 tag 都能跑。
-          if [ -f test/manifest-compat.test.mjs ]; then
-            node --test test/manifest-compat.test.mjs
-          fi
+          tail -12 /tmp/unit.log
 
       # 幂等：版本已在 npmjs 上就跳过。这样"先本地发、后补 tag"不会把 run 打红，
       # 重跑同一个 tag 也是 no-op 而不是失败（LESSONS §42）。
