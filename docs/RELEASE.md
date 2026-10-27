@@ -118,8 +118,10 @@ tag 推上去后，GitHub runner（不在公司网内，绕开 SWG 上传拦截�
 2. `node --check` + 单测；
 3. **幂等**发布：该版本已在 npmjs 上就跳过，所以"先本地发、后补 tag"或重跑同一个 tag 都不会打红；
 4. **淘宝源强制同步**（用户铁律"不许干等"）：每轮先
-   `PUT https://registry.npmmirror.com/-/sync?name=%40yanglaofish%2Fdsh-skill-manager`
-   再轮询 `dist-tags.latest`，最多 60 轮、每轮间隔 8 秒，直到等于本次版本才成功退出。
+   `PUT https://registry.npmmirror.com/@yanglaofish%2Fdsh-skill-manager/sync`
+   再核对目标版本是否出现在镜像元数据中；当前世代还要求 `latest` 指向目标版本，
+   历史 1.x 不抢占 `latest`。最多 60 轮、每轮间隔 8 秒。
+   版本从 `package.json` 读取，兼容标签发布和分支上的手动核验。
 
 > **代际对齐编号必须显式指定 dist-tag（2026-10-08 实测）**：版本号低于现役 `latest` 时，npm
 > **拒绝隐式打 latest**：
@@ -133,8 +135,8 @@ tag 推上去后，GitHub runner（不在公司网内，绕开 SWG 上传拦截�
 > "发到临时 `pending` tag + `npm dist-tag add … latest`"。
 
 > ⚠️ 两个已踩过的坑，改这个 workflow 时别改回去：
-> - 端点是**查询参数**式 `/-/sync?name=…`（201）；路径式 `/-/sync/@scope%2Fname` 返回 **404**。
->   旧写法被 `|| true` 吞掉，看起来"同步过了"，实际一直靠懒同步兜底。
+> - **2026-10-28 更正**：使用 `/:fullname/sync`。旧 `/-/sync?name=…` 虽返回 201，
+>   任务日志却显示在同步名为 `-` 的包。只看入队状态码不能证明目标正确。
 > - `PUT` 返回 201 只是**入队确认**，不等于同步完成。实测要 11~33 轮（2~4 分钟），所以必须
 >   每轮**重发**再轮询，只发一次会 stuck。
 >
@@ -144,7 +146,7 @@ tag 推上去后，GitHub runner（不在公司网内，绕开 SWG 上传拦截�
 ### 本地兜底：手动触发淘宝同步
 
 ```powershell
-curl.exe -sS -X PUT "https://registry.npmmirror.com/-/sync?name=%40yanglaofish%2Fdsh-skill-manager" -H "content-type: application/json" -d "{\"version\":\"2.0.1\"}"
+curl.exe -sS -X PUT "https://registry.npmmirror.com/@yanglaofish%2Fdsh-skill-manager/sync" -H "content-type: application/json" -d '{}'
 curl.exe -sS "https://registry.npmmirror.com/%40yanglaofish%2Fdsh-skill-manager" | Select-String "latest"
 ```
 
@@ -228,6 +230,9 @@ error: profile "desktop" is managed exclusively by the Electron application
 | 发布出去的版本无法加载（跳过/报错） | 走 `.github/workflows/npm-admin.yml` 做 `deprecate`（**优先**，保留可安装性）；确实没人装过再考虑 `unpublish`（72 小时窗口） |
 | tag 打错（版本与 package.json 不一致） | 删掉远端 tag 重打：`git tag -d vX.Y.Z; git push origin --delete vX.Y.Z; git tag vX.Y.Z; git push origin vX.Y.Z`。注意 tag 触发时 workflow 取的是**该 commit 的版本**，所以改了 workflow 必须重打 tag |
 | 本地发布撞 staging | 在 npmjs 网页批准 2FA，然后重跑 job（幂等） |
+
+**已发布标签不可移动**：如果包已在 npm 可见，后续流水线修复应提交到发行分支并手动运行，
+利用幂等检查跳过已有版本；上表的重打标签处置仅限尚未发布的错误标签。
 
 ---
 
