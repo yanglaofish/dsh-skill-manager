@@ -2,7 +2,7 @@
 
 一个 DeepSeek Harness（DSH）插件：统一查看、编辑、导入和管理技能，按照「技能库 / 工作区 / 会话」三层控制技能生效范围。技能放进库中不会自动启用；工作区选择提供会话默认值，会话也可以从库中独立勾选自己的技能集合。
 
-## 2.1.1 更新（待发布）
+## 2.1.1 更新
 
 - 修复 [issue #3](https://github.com/yanglaofish/dsh-skill-manager/issues/3)：面板复用宿主
   `connection.requestRejection()`，支持已声明的可信域名与反向代理，同时保留宿主的
