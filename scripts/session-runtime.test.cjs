@@ -39,6 +39,8 @@ registerHooks({ resolve(specifier, context, next) {
   const agents = new Map();
   ctx.provide('tools', { register(tool) { tools.set(tool.name, tool); return () => tools.delete(tool.name); }, get(name) { return tools.get(name); } });
   ctx.provide('sessions', { list() { return []; } });
+  // rc.3 的原生 skill 工具通过此服务解析目录；测试项目固定，不申请真实目录权限。
+  ctx.provide('workingDirectory', { ensure: async (agent) => agent.session.header.cwd });
   ctx.provide('agents', { get(id) { return agents.get(id); }, list() { return [...agents.values()]; } });
   const cwd = path.join(root, 'project');
   await fs.mkdir(cwd);

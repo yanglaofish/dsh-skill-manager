@@ -47,7 +47,7 @@ const clientCode = codeLines(clientSource)
 
 /** 本插件声明支持的运行时世代。版本约定（用户定案）：插件大版本 = dsh 代际，
  *  1.x 服务 dsh 0.1.x，2.x 服务 dsh 0.2.x，peer 范围只声明真正验证过的世代。 */
-const SUPPORTED_RUNTIMES = ['0.2.0-rc.2', '0.2.9']
+const SUPPORTED_RUNTIMES = ['0.2.0-rc.2', '0.2.1-rc.2', '0.2.1-rc.3', '0.2.9']
 
 // ---------------------------------------------------------------- semver 子集
 
